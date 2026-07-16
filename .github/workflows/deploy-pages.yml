@@ -39,6 +39,8 @@ jobs:
         run: pnpm test
       - name: Production build
         run: pnpm build
+      - name: Initial bundle gate
+        run: pnpm check:bundle
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

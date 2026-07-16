@@ -1,16 +1,17 @@
 import Phaser from 'phaser';
 import {
-  CRYSTAL, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
-  INTERMISSION_SECONDS, PATH, STARTING_GOLD, STARTING_LIVES, TOWERS, WAVES,
+  CRYSTAL, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
+  INTERMISSION_SECONDS, PATH, TOWERS, WAVES,
 } from '../core/config';
-import { applyArmor, applySlow, chainTargets, distance, loseLives, placementFailure, pointToLineDistance, selectTarget, sellValue } from '../core/rules';
-import type { EnemyType, Point, TargetMode, TowerType } from '../core/types';
+import { applyArmor, applySlow, chainTargets, distance, loseLives, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue } from '../core/rules';
+import type { Difficulty, EnemyType, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
 
 type Action =
   | { type: 'begin' } | { type: 'build'; tower: TowerType } | { type: 'start-wave' }
   | { type: 'pause' } | { type: 'speed' } | { type: 'upgrade' } | { type: 'sell' }
-  | { type: 'target' } | { type: 'ability'; key: 'q' | 'w' | 'e' | 'r' };
+  | { type: 'target' } | { type: 'ability'; key: 'q' | 'w' | 'e' | 'r' }
+  | { type: 'difficulty'; difficulty: Difficulty };
 
 interface TowerUnit {
   id: number;
@@ -23,6 +24,7 @@ interface TowerUnit {
   paidUpgrades: number[];
   container: Phaser.GameObjects.Container;
   art: Phaser.GameObjects.Graphics;
+  sprite: Phaser.GameObjects.Image;
 }
 
 interface EnemyUnit {
@@ -41,6 +43,7 @@ interface EnemyUnit {
   contactCooldown: number;
   container: Phaser.GameObjects.Container;
   art: Phaser.GameObjects.Graphics;
+  sprite: Phaser.GameObjects.Image;
   hpBar: Phaser.GameObjects.Graphics;
 }
 
@@ -79,6 +82,7 @@ interface HeroState {
   cooldowns: Record<'q' | 'w' | 'e' | 'r', number>;
   container: Phaser.GameObjects.Container;
   art: Phaser.GameObjects.Graphics;
+  sprite: Phaser.GameObjects.Image;
 }
 
 export interface HudState {
@@ -94,6 +98,10 @@ export interface HudState {
   waveIntel: string;
   paused: boolean;
   speed: number;
+  difficulty: Difficulty;
+  difficultyName: string;
+  score: number;
+  towerCount: number;
   buildType: TowerType | null;
   placementMessage: string;
   selectedTower: null | { name: string; level: number; mode: string; nextCost: number | null; sellValue: number; description: string };
@@ -108,6 +116,8 @@ declare global {
       state: () => HudState;
       skipToBoss: () => void;
       defeat: () => void;
+      spawnStress: (count: number) => void;
+      metrics: () => { activeEnemies: number; gameObjects: number; averageFrameMs: number; fps: number };
     };
   }
 }
@@ -122,8 +132,10 @@ export class GameScene extends Phaser.Scene {
   private started = false;
   private paused = false;
   private speed = 1;
-  private gold = TEST_MODE ? 9999 : STARTING_GOLD;
-  private lives = STARTING_LIVES;
+  private difficulty: Difficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
+  private gold = TEST_MODE ? 9999 : DIFFICULTIES[this.difficulty].startingGold;
+  private lives = DIFFICULTIES[this.difficulty].crystalLives;
+  private score = 0;
   private currentWave = 0;
   private waveActive = false;
   private countdown = TEST_MODE ? 30 : INTERMISSION_SECONDS;
@@ -144,14 +156,23 @@ export class GameScene extends Phaser.Scene {
   private routeLengths: number[] = [];
   private routeTotal = 0;
   private offAction: (() => void) | null = null;
+  private frameSamples: number[] = [];
+  private reduceMotion = localStorage.getItem('rift-reduce-motion') === 'on';
+  private screenShake = localStorage.getItem('rift-screen-shake') !== 'off';
 
   constructor() {
     super('valley');
   }
 
+  preload(): void {
+    this.load.spritesheet('tower-art', 'assets/towers-atlas.png', { frameWidth: 512, frameHeight: 512 });
+    this.load.spritesheet('unit-art', 'assets/units-atlas.png', { frameWidth: 320, frameHeight: 480 });
+  }
+
   create(): void {
     this.buildRouteCache();
     this.drawMap();
+    this.createAtmosphere();
     this.preview = this.add.graphics().setDepth(40);
     this.selectionRing = this.add.graphics().setDepth(35);
     this.createHero();
@@ -179,11 +200,17 @@ export class GameScene extends Phaser.Scene {
         state: () => this.getHudState(),
         skipToBoss: () => this.skipToBoss(),
         defeat: () => { this.lives = 0; this.finish('defeat'); },
+        spawnStress: (count) => this.spawnStress(count),
+        metrics: () => this.getPerformanceMetrics(),
       };
     }
   }
 
   update(_time: number, rawDelta: number): void {
+    this.reduceMotion = localStorage.getItem('rift-reduce-motion') === 'on';
+    this.screenShake = localStorage.getItem('rift-screen-shake') !== 'off';
+    this.frameSamples.push(rawDelta);
+    if (this.frameSamples.length > 240) this.frameSamples.shift();
     this.updateCamera(rawDelta);
     if (!this.started || this.paused || this.result !== 'playing') {
       this.emitHud();
@@ -263,21 +290,37 @@ export class GameScene extends Phaser.Scene {
       { x: CRYSTAL.x + 8, y: CRYSTAL.y + 32 }, { x: CRYSTAL.x - 22, y: CRYSTAL.y + 1 },
     ], true);
     this.add.text(1058, 321, 'КРИСТАЛЛ', { fontFamily: 'Arial', fontSize: '14px', color: '#ffd978', fontStyle: 'bold' });
-    this.add.text(28, 24, 'ДОЛИНА РАЗЛОМА', { fontFamily: 'Georgia', fontSize: '24px', color: '#f6d68c', stroke: '#18111f', strokeThickness: 5 }).setDepth(6);
+  }
+
+  private createAtmosphere(): void {
+    for (let index = 0; index < 28; index += 1) {
+      const warm = index % 3 === 0;
+      const mote = this.add.circle(
+        Phaser.Math.Between(20, GAME_WIDTH - 20), Phaser.Math.Between(30, GAME_HEIGHT - 30),
+        Phaser.Math.Between(1, 3), warm ? 0xffd36a : 0xa771ff, Phaser.Math.FloatBetween(0.12, 0.38),
+      ).setDepth(7);
+      if (!this.reduceMotion) {
+        this.tweens.add({
+          targets: mote, x: mote.x + Phaser.Math.Between(-70, 70), y: mote.y - Phaser.Math.Between(35, 110),
+          alpha: { from: mote.alpha, to: 0.04 }, duration: Phaser.Math.Between(4200, 8200),
+          yoyo: true, repeat: -1, ease: 'Sine.inOut', delay: Phaser.Math.Between(0, 2000),
+        });
+      }
+    }
   }
 
   private createHero(): void {
     const art = this.add.graphics();
-    art.fillStyle(0x0b1722, 0.6).fillEllipse(5, 12, 42, 20);
-    art.fillStyle(0x2e8fa6, 1).fillCircle(0, 0, 20);
-    art.lineStyle(4, 0x89f2ff, 1).strokeCircle(0, 0, 20);
-    art.fillStyle(0xffdc72, 1).fillTriangle(-8, -8, 8, -8, 0, -28);
-    art.lineStyle(2, 0xffffff, 0.8).beginPath().moveTo(-25, 5).lineTo(25, -10).strokePath();
-    const container = this.add.container(CRYSTAL.x - 70, CRYSTAL.y + 80, [art]).setDepth(18);
+    art.fillStyle(0x0b1722, 0.62).fillEllipse(5, 15, 54, 22);
+    art.fillStyle(0x49dbf2, 0.14).fillCircle(0, -4, 34);
+    art.lineStyle(2, 0x8ff4ff, 0.65).strokeCircle(0, -4, 28);
+    const sprite = this.add.image(0, -19, 'unit-art', 5).setScale(0.145);
+    const container = this.add.container(CRYSTAL.x - 70, CRYSTAL.y + 80, [art, sprite]).setDepth(18);
+    if (!this.reduceMotion) this.tweens.add({ targets: sprite, y: -23, duration: 1150, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     this.hero = {
       x: container.x, y: container.y, target: { x: container.x, y: container.y }, hp: HERO.maxHp, mana: HERO.maxMana,
       xp: TEST_MODE ? 260 : 0, level: TEST_MODE ? 3 : 1, alive: true, respawnAt: 0, nextAttackAt: 0, sealUntil: 0,
-      cooldowns: { q: 0, w: 0, e: 0, r: 0 }, container, art,
+      cooldowns: { q: 0, w: 0, e: 0, r: 0 }, container, art, sprite,
     };
   }
 
@@ -285,6 +328,11 @@ export class GameScene extends Phaser.Scene {
     if (action.type === 'begin') {
       this.started = true;
       emit('td:sound', 'wave');
+    } else if (action.type === 'difficulty' && !this.started) {
+      this.difficulty = action.difficulty;
+      localStorage.setItem('rift-difficulty', action.difficulty);
+      this.gold = TEST_MODE ? 9999 : DIFFICULTIES[this.difficulty].startingGold;
+      this.lives = DIFFICULTIES[this.difficulty].crystalLives;
     } else if (action.type === 'build') this.chooseBuild(action.tower);
     else if (action.type === 'start-wave') this.startNextWave(true);
     else if (action.type === 'pause') this.togglePause();
@@ -347,7 +395,9 @@ export class GameScene extends Phaser.Scene {
     const definition = TOWERS[this.buildType];
     this.gold -= definition.cost;
     const art = this.add.graphics();
-    const container = this.add.container(point.x, point.y, [art]).setDepth(15);
+    const frame = { archer: 0, frost: 1, siege: 2, boost: 3 }[this.buildType];
+    const sprite = this.add.image(0, -13, 'tower-art', frame).setScale(0.105);
+    const container = this.add.container(point.x, point.y, [art, sprite]).setDepth(15);
     container.setSize(52, 52).setInteractive(new Phaser.Geom.Circle(0, 0, 28), Phaser.Geom.Circle.Contains);
     container.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
@@ -356,9 +406,10 @@ export class GameScene extends Phaser.Scene {
       this.drawSelection();
       this.emitHud(true);
     });
-    const tower: TowerUnit = { id: this.nextId++, type: this.buildType, x: point.x, y: point.y, level: 1, targetMode: 'first', nextAttackAt: 0, paidUpgrades: [], container, art };
+    const tower: TowerUnit = { id: this.nextId++, type: this.buildType, x: point.x, y: point.y, level: 1, targetMode: 'first', nextAttackAt: 0, paidUpgrades: [], container, art, sprite };
     this.towers.push(tower);
     this.drawTower(tower);
+    if (!this.reduceMotion) this.tweens.add({ targets: sprite, scaleX: 0.118, scaleY: 0.118, duration: 180, yoyo: true, ease: 'Back.out' });
     this.selectedTower = tower;
     this.buildType = null;
     this.preview.clear();
@@ -370,15 +421,12 @@ export class GameScene extends Phaser.Scene {
   private drawTower(tower: TowerUnit): void {
     const definition = TOWERS[tower.type];
     const art = tower.art.clear();
-    art.fillStyle(0x10121a, 0.55).fillEllipse(5, 16, 56, 24);
-    art.fillStyle(0x4a4250, 1).fillRect(-19, -2, 38, 30);
-    art.fillStyle(definition.color, 1).fillCircle(0, -7, 19 + tower.level * 2);
-    art.lineStyle(3, 0xffe8b1, 0.65).strokeCircle(0, -7, 19 + tower.level * 2);
-    if (tower.type === 'archer') art.lineStyle(5, 0x432916, 1).beginPath().moveTo(-18, -19).lineTo(18, 5).strokePath();
-    if (tower.type === 'frost') art.fillStyle(0xc9f6ff, 1).fillTriangle(0, -33, -9, -7, 10, -7);
-    if (tower.type === 'siege') art.fillStyle(0x33221d, 1).fillRect(-25, -15, 50, 12);
-    if (tower.type === 'boost') art.lineStyle(3, 0xf0d6ff, 1).strokeCircle(0, -7, 10);
-    for (let index = 0; index < tower.level; index += 1) art.fillStyle(0xffdc72, 1).fillCircle(-10 + index * 10, 21, 3);
+    art.fillStyle(0x080912, 0.58).fillEllipse(4, 17, 62, 23);
+    art.fillStyle(definition.color, 0.11 + tower.level * 0.025).fillCircle(0, -6, 30 + tower.level * 3);
+    art.lineStyle(1.5 + tower.level * 0.5, definition.color, 0.52).strokeCircle(0, -6, 25 + tower.level * 2);
+    tower.sprite.setFrame({ archer: 0, frost: 1, siege: 2, boost: 3 }[tower.type]);
+    tower.sprite.setScale(0.098 + tower.level * 0.008).setTint(tower.level === 3 ? 0xfff1c2 : 0xffffff);
+    for (let index = 0; index < tower.level; index += 1) art.fillStyle(0xffdc72, 1).fillCircle(-10 + index * 10, 23, 3);
   }
 
   private selectTowerAt(point: Point): void {
@@ -431,6 +479,7 @@ export class GameScene extends Phaser.Scene {
   private startNextWave(early: boolean): void {
     if (!this.started || this.waveActive || this.result !== 'playing' || this.currentWave >= WAVES.length) return;
     if (early) this.gold += Math.floor(Math.max(0, this.countdown) * EARLY_START_GOLD_PER_SECOND);
+    if (early) this.score += Math.floor(Math.max(0, this.countdown) * 25 * DIFFICULTIES[this.difficulty].scoreMultiplier);
     this.currentWave += 1;
     this.waveActive = true;
     this.spawnQueue = [];
@@ -461,49 +510,56 @@ export class GameScene extends Phaser.Scene {
     if (!this.spawnQueue.length && !this.enemies.some((enemy) => enemy.alive)) {
       this.waveActive = false;
       this.gold += WAVES[this.currentWave - 1].reward;
+      this.score += Math.round((350 + this.currentWave * 40) * DIFFICULTIES[this.difficulty].scoreMultiplier);
       if (this.currentWave >= WAVES.length) this.finish('victory');
       else this.countdown = TEST_MODE ? 0.55 : INTERMISSION_SECONDS;
     }
   }
 
   private spawnEnemy(type: EnemyType, progress: number): EnemyUnit {
-    const definition = ENEMIES[type];
+    const definition = this.enemyDefinition(type);
     const position = this.pointAtProgress(progress);
     const art = this.add.graphics();
+    const frame = { raider: 0, runner: 1, brute: 2, winged: 3, boss: 4 }[type];
+    const spriteScale = { raider: 0.095, runner: 0.09, brute: 0.125, winged: 0.115, boss: 0.19 }[type];
+    const sprite = this.add.image(0, type === 'boss' ? -28 : -18, 'unit-art', frame).setScale(spriteScale);
     const hpBar = this.add.graphics();
-    const container = this.add.container(position.x, position.y, [art, hpBar]).setDepth(type === 'winged' ? 25 : 16);
+    const container = this.add.container(position.x, position.y, [art, sprite, hpBar]).setDepth(type === 'winged' ? 25 : 16);
     const maxHp = definition.maxHp * ENEMY_HP_SCALE;
     const enemy: EnemyUnit = {
       id: this.nextId++, type, hp: maxHp, maxHp, progress, alive: true, slow: 0, slowUntil: 0, phase: 1,
-      shieldUntil: 0, lastShieldAt: this.simTime, summonedPhase: false, contactCooldown: 0, container, art, hpBar,
+      shieldUntil: 0, lastShieldAt: this.simTime, summonedPhase: false, contactCooldown: 0, container, art, sprite, hpBar,
     };
     this.enemies.push(enemy);
     this.drawEnemy(enemy);
+    if (!this.reduceMotion) {
+      sprite.setAlpha(0).setScale(spriteScale * 0.55);
+      this.tweens.add({ targets: sprite, alpha: 1, scaleX: spriteScale, scaleY: spriteScale, duration: 260, ease: 'Back.out' });
+      const portalPulse = this.add.circle(PATH[0].x, PATH[0].y, 16, 0xb54dff, 0.55).setDepth(14);
+      this.tweens.add({ targets: portalPulse, scale: 2.8, alpha: 0, duration: 300, onComplete: () => portalPulse.destroy() });
+    }
     return enemy;
   }
 
   private drawEnemy(enemy: EnemyUnit): void {
-    const definition = ENEMIES[enemy.type];
+    const definition = this.enemyDefinition(enemy.type);
     const art = enemy.art.clear();
-    art.fillStyle(0x070914, 0.6).fillEllipse(5, definition.radius * 0.75, definition.radius * 2.2, definition.radius);
-    if (enemy.type === 'winged') {
-      art.fillStyle(0x8e9cff, 0.8).fillTriangle(-4, -3, -30, -17, -19, 10).fillTriangle(4, -3, 30, -17, 19, 10);
-    }
+    art.fillStyle(0x070914, 0.62).fillEllipse(5, definition.radius * 0.85, definition.radius * 2.5, definition.radius);
     if (enemy.type === 'boss') {
-      art.fillStyle(0x351030, 1).fillCircle(0, 0, definition.radius + 7);
-      art.lineStyle(5, enemy.shieldUntil > this.simTime ? 0xaeefff : 0xff62bc, 0.95).strokeCircle(0, 0, definition.radius + 8);
-      art.fillStyle(0xffd0ec, 1).fillTriangle(-22, -20, -10, -47, -2, -19).fillTriangle(22, -20, 10, -47, 2, -19);
+      art.fillStyle(0xff3f9a, 0.13).fillCircle(0, -10, definition.radius + 18);
+      art.lineStyle(5, enemy.shieldUntil > this.simTime ? 0xaeefff : 0xff62bc, 0.92).strokeCircle(0, -10, definition.radius + 14);
     } else {
-      art.fillStyle(definition.color, 1).fillCircle(0, 0, definition.radius);
-      art.lineStyle(2, 0xe8c9ff, 0.55).strokeCircle(0, 0, definition.radius);
+      art.fillStyle(definition.color, 0.1).fillCircle(0, -7, definition.radius + 8);
+      art.lineStyle(2, definition.color, 0.46).strokeCircle(0, -7, definition.radius + 6);
       if (enemy.type === 'brute') art.lineStyle(5, 0xbbb0c6, 0.85).strokeCircle(0, 0, definition.radius + 3);
     }
-    art.fillStyle(0xffffff, 0.85).fillCircle(-5, -3, 2).fillCircle(5, -3, 2);
+    enemy.sprite.setFrame({ raider: 0, runner: 1, brute: 2, winged: 3, boss: 4 }[enemy.type]);
+    enemy.sprite.setTint(enemy.slowUntil > this.simTime ? 0xb9f4ff : 0xffffff);
     this.drawEnemyHealth(enemy);
   }
 
   private drawEnemyHealth(enemy: EnemyUnit): void {
-    const definition = ENEMIES[enemy.type];
+    const definition = this.enemyDefinition(enemy.type);
     const width = enemy.type === 'boss' ? 72 : 34;
     enemy.hpBar.clear().fillStyle(0x120e18, 0.9).fillRect(-width / 2, -definition.radius - 14, width, 5)
       .fillStyle(enemy.hp / enemy.maxHp > 0.35 ? 0x6ee07a : 0xff5d72, 1).fillRect(-width / 2, -definition.radius - 14, width * Math.max(0, enemy.hp / enemy.maxHp), 5);
@@ -512,7 +568,7 @@ export class GameScene extends Phaser.Scene {
   private updateEnemies(delta: number): void {
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
-      const definition = ENEMIES[enemy.type];
+      const definition = this.enemyDefinition(enemy.type);
       if (enemy.type === 'boss') {
         if (this.simTime - enemy.lastShieldAt >= (TEST_MODE ? 2500 : 9000)) {
           enemy.lastShieldAt = this.simTime;
@@ -522,6 +578,7 @@ export class GameScene extends Phaser.Scene {
         if (enemy.hp <= enemy.maxHp * 0.5 && enemy.phase === 1) {
           enemy.phase = 2;
           this.cameraFlash(0xff3f9a);
+          if (this.screenShake && !this.reduceMotion) this.cameras.main.shake(380, 0.008);
           if (!enemy.summonedPhase) {
             enemy.summonedPhase = true;
             for (let index = 0; index < 5; index += 1) this.spawnEnemy('runner', Math.max(0, enemy.progress - index * 22));
@@ -545,7 +602,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private enemyReachedCrystal(enemy: EnemyUnit): void {
-    this.lives = loseLives(this.lives, ENEMIES[enemy.type].crystalDamage);
+    this.lives = loseLives(this.lives, this.enemyDefinition(enemy.type).crystalDamage);
     this.destroyEnemy(enemy, false);
     this.cameraFlash(0xff486c);
     if (this.lives <= 0) this.finish('defeat');
@@ -555,9 +612,15 @@ export class GameScene extends Phaser.Scene {
     if (!enemy.alive) return;
     enemy.alive = false;
     if (rewarded) {
-      this.gold += ENEMIES[enemy.type].reward;
+      const reward = this.enemyDefinition(enemy.type).reward;
+      this.gold += reward;
+      this.score += Math.round(reward * 10 * DIFFICULTIES[this.difficulty].scoreMultiplier);
       this.hero.xp += enemy.type === 'boss' ? 240 : 18;
       this.updateHeroLevel();
+    }
+    if (!this.reduceMotion) {
+      const ghost = this.add.image(enemy.container.x, enemy.container.y - 16, 'unit-art', enemy.sprite.frame.name).setScale(enemy.sprite.scaleX).setTint(0xd9a4ff).setDepth(28);
+      this.tweens.add({ targets: ghost, y: ghost.y - 24, angle: Phaser.Math.Between(-12, 12), alpha: 0, scale: enemy.sprite.scaleX * 1.2, duration: 320, ease: 'Cubic.out', onComplete: () => ghost.destroy() });
     }
     enemy.container.destroy(true);
     emit('td:sound', 'death');
@@ -582,7 +645,7 @@ export class GameScene extends Phaser.Scene {
       const definition = TOWERS[tower.type];
       const level = definition.levels[tower.level - 1];
       const inRange = this.enemies.filter((enemy) => enemy.alive && distance(tower, enemy.container) <= level.range);
-      const targetSnapshot = selectTarget(inRange.map((enemy) => ({ id: enemy.id, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: ENEMIES[enemy.type].flying, alive: enemy.alive })), tower.targetMode, definition.canTargetAir);
+      const targetSnapshot = selectTarget(inRange.map((enemy) => ({ id: enemy.id, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: this.enemyDefinition(enemy.type).flying, alive: enemy.alive })), tower.targetMode, definition.canTargetAir);
       const target = inRange.find((enemy) => enemy.id === targetSnapshot?.id);
       if (!target) continue;
       const boosted = this.towers.some((candidate) => candidate.type === 'boost' && distance(tower, candidate) <= TOWERS.boost.levels[candidate.level - 1].range);
@@ -636,13 +699,25 @@ export class GameScene extends Phaser.Scene {
       }
     });
     const burst = this.add.circle(center.x, center.y, 8, projectile.color, 0.7).setDepth(29);
-    this.tweens.add({ targets: burst, scale: 3.5, alpha: 0, duration: 180, onComplete: () => burst.destroy() });
+    const duration = this.reduceMotion ? 70 : 220;
+    this.tweens.add({ targets: burst, scale: 3.5, alpha: 0, duration, onComplete: () => burst.destroy() });
+    if (!this.reduceMotion) {
+      for (let index = 0; index < 6; index += 1) {
+        const angle = (index / 6) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.2, 0.2);
+        const shard = this.add.circle(center.x, center.y, 2.5, projectile.color, 0.9).setDepth(30);
+        this.tweens.add({
+          targets: shard, x: center.x + Math.cos(angle) * Phaser.Math.Between(18, 42), y: center.y + Math.sin(angle) * Phaser.Math.Between(18, 42),
+          alpha: 0, scale: 0.2, duration: Phaser.Math.Between(180, 320), onComplete: () => shard.destroy(),
+        });
+      }
+      if (projectile.splash >= 70 && this.screenShake) this.cameras.main.shake(90, 0.0025);
+    }
     emit('td:sound', 'hit');
   }
 
   private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean): void {
     if (!enemy.alive) return;
-    const armor = magic ? ENEMIES[enemy.type].armor * 0.2 : ENEMIES[enemy.type].armor;
+    const armor = magic ? this.enemyDefinition(enemy.type).armor * 0.2 : this.enemyDefinition(enemy.type).armor;
     const shield = enemy.type === 'boss' && enemy.shieldUntil > this.simTime ? 0.3 : 1;
     enemy.hp -= applyArmor(rawDamage, armor) * shield;
     this.drawEnemyHealth(enemy);
@@ -719,7 +794,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private castChainLightning(): void {
-    const candidates = this.enemies.map((enemy) => ({ id: enemy.id, x: enemy.container.x, y: enemy.container.y, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: ENEMIES[enemy.type].flying, alive: enemy.alive }));
+    const candidates = this.enemies.map((enemy) => ({ id: enemy.id, x: enemy.container.x, y: enemy.container.y, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: this.enemyDefinition(enemy.type).flying, alive: enemy.alive }));
     const ids = chainTargets(this.hero, candidates, 5 + this.hero.level, 235);
     let from: Point = { x: this.hero.x, y: this.hero.y };
     ids.forEach((id, index) => {
@@ -800,7 +875,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private cameraFlash(color: number): void {
-    this.cameras.main.flash(220, (color >> 16) & 255, (color >> 8) & 255, color & 255, false);
+    if (!this.reduceMotion) this.cameras.main.flash(220, (color >> 16) & 255, (color >> 8) & 255, color & 255, false);
   }
 
   private finish(result: 'victory' | 'defeat'): void {
@@ -809,6 +884,8 @@ export class GameScene extends Phaser.Scene {
     this.paused = false;
     const previous = Number(localStorage.getItem('rift-best-wave') ?? 0);
     localStorage.setItem('rift-best-wave', String(Math.max(previous, this.currentWave)));
+    const bestScore = Number(localStorage.getItem('rift-best-score') ?? 0);
+    localStorage.setItem('rift-best-score', String(Math.max(bestScore, this.score)));
     emit('td:sound', result);
     this.emitHud(true);
   }
@@ -822,6 +899,36 @@ export class GameScene extends Phaser.Scene {
     this.waveActive = false;
     this.countdown = 0;
     this.startNextWave(false);
+  }
+
+  private enemyDefinition(type: EnemyType) {
+    return scaleEnemy(ENEMIES[type], DIFFICULTIES[this.difficulty]);
+  }
+
+  private spawnStress(count: number): void {
+    if (!TEST_MODE) return;
+    this.started = true;
+    this.waveActive = true;
+    this.countdown = 0;
+    this.spawnQueue = [];
+    this.enemies.forEach((enemy) => this.destroyEnemy(enemy, false));
+    this.enemies = [];
+    for (let index = 0; index < Math.min(160, Math.max(0, count)); index += 1) {
+      const types: EnemyType[] = ['raider', 'runner', 'brute', 'winged'];
+      this.spawnEnemy(types[index % types.length], (index % 20) * 12);
+    }
+  }
+
+  private getPerformanceMetrics() {
+    const averageFrameMs = this.frameSamples.length
+      ? this.frameSamples.reduce((sum, value) => sum + value, 0) / this.frameSamples.length
+      : 0;
+    return {
+      activeEnemies: this.enemies.filter((enemy) => enemy.alive).length,
+      gameObjects: this.children.list.length,
+      averageFrameMs: Number(averageFrameMs.toFixed(2)),
+      fps: averageFrameMs > 0 ? Number((1000 / averageFrameMs).toFixed(1)) : 0,
+    };
   }
 
   private getHudState(): HudState {
@@ -840,7 +947,8 @@ export class GameScene extends Phaser.Scene {
       remaining: this.spawnQueue.length + this.enemies.filter((enemy) => enemy.alive).length,
       countdown: Math.max(0, this.countdown), waveActive: this.waveActive,
       waveTitle: WAVES[upcomingIndex]?.title ?? '', waveIntel: WAVES[upcomingIndex]?.intel ?? '',
-      paused: this.paused, speed: this.speed, buildType: this.buildType, placementMessage: this.placementMessage,
+      paused: this.paused, speed: this.speed, difficulty: this.difficulty, difficultyName: DIFFICULTIES[this.difficulty].name,
+      score: this.score, towerCount: this.towers.length, buildType: this.buildType, placementMessage: this.placementMessage,
       selectedTower: selected && definition ? {
         name: definition.name, level: selected.level, mode: selected.targetMode === 'first' ? 'Первая по пути' : 'Самая сильная',
         nextCost: definition.levels[selected.level - 1].upgradeCost,

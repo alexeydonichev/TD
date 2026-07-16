@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, isWaveComplete, loseLives,
-  matchResult, placementFailure, pointToLineDistance, selectTarget, sellValue, upgrade,
+  matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, upgrade,
 } from './rules';
+import { DIFFICULTIES, ENEMIES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -105,5 +106,21 @@ describe('способности героя', () => {
   it('рывок поражает только цели рядом с траекторией', () => {
     expect(pointToLineDistance({ x: 50, y: 8 }, { x: 0, y: 0 }, { x: 100, y: 0 })).toBeCloseTo(8);
     expect(pointToLineDistance({ x: 50, y: 80 }, { x: 0, y: 0 }, { x: 100, y: 0 })).toBeCloseTo(80);
+  });
+});
+
+describe('режимы сложности', () => {
+  it('сюжетный режим ослабляет врага и повышает награду', () => {
+    const scaled = scaleEnemy(ENEMIES.raider, DIFFICULTIES.story);
+    expect(scaled.maxHp).toBeLessThan(ENEMIES.raider.maxHp);
+    expect(scaled.speed).toBeLessThan(ENEMIES.raider.speed);
+    expect(scaled.reward).toBeGreaterThan(ENEMIES.raider.reward);
+  });
+
+  it('Разлом усиливает здоровье и скорость, сохраняя положительную награду', () => {
+    const scaled = scaleEnemy(ENEMIES.brute, DIFFICULTIES.rift);
+    expect(scaled.maxHp).toBeGreaterThan(ENEMIES.brute.maxHp);
+    expect(scaled.speed).toBeGreaterThan(ENEMIES.brute.speed);
+    expect(scaled.reward).toBeGreaterThan(0);
   });
 });

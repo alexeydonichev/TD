@@ -11,9 +11,9 @@ test('полный ускоренный матч: башня, способнос
   await expect(page.getByRole('button', { name: 'НАЧАТЬ ИГРУ' })).toBeVisible();
   await page.getByRole('button', { name: 'НАЧАТЬ ИГРУ' }).click();
 
-  await page.locator('[data-tower="archer"]').click();
   const canvas = page.locator('canvas');
-  await expect(canvas).toBeVisible();
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
+  await page.locator('[data-tower="archer"]').click();
   const box = await canvas.boundingBox();
   if (!box) throw new Error('Canvas has no bounding box');
   const clickWorld = async (x: number, y: number) => page.mouse.click(box.x + box.width * (x / 1200), box.y + box.height * (y / 700));
@@ -58,8 +58,42 @@ test('полный ускоренный матч: башня, способнос
 test('Кристалл можно потерять и начать заново', async ({ page }) => {
   await page.goto('/?test=1');
   await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
   await page.evaluate(() => window.__TD_TEST__?.defeat());
   await expect(page.locator('#end-screen')).toBeVisible();
   await expect(page.locator('#end-title')).toHaveText('Долина пала');
   await expect(page.locator('#restart')).toBeVisible();
+});
+
+test('режим Хранителя меняет стартовую экономику', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-difficulty="story"]').click();
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#gold')).toHaveText('520');
+  await expect(page.locator('#lives')).toHaveText('26');
+  await expect(page.locator('#difficulty-badge')).toHaveText('ХРАНИТЕЛЬ');
+  await expect(page.locator('#tutorial')).toBeVisible();
+  await page.locator('#tutorial-skip').click();
+  await page.locator('#settings').click();
+  await expect(page.locator('#settings-dialog')).toBeVisible();
+  await page.locator('#high-contrast').check();
+  await expect(page.locator('body')).toHaveClass(/high-contrast/);
+  await page.locator('#close-settings').click();
+  await expect(page.locator('#settings-dialog')).toBeHidden();
+});
+
+test('профиль держит 100 активных противников без утечки объектов', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
+  await page.evaluate(() => window.__TD_TEST__?.spawnStress(100));
+  await page.waitForTimeout(2_500);
+  const metrics = await page.evaluate(() => window.__TD_TEST__?.metrics());
+  expect(metrics).toBeTruthy();
+  expect(metrics!.activeEnemies).toBeGreaterThanOrEqual(100);
+  expect(metrics!.gameObjects).toBeLessThan(500);
+  expect(metrics!.fps).toBeGreaterThanOrEqual(30);
 });

@@ -10,7 +10,7 @@ page.setDefaultTimeout(8_000);
 
 const canvas = page.locator('canvas');
 const towerCosts = { archer: 110, frost: 145, siege: 185, boost: 160 };
-const pending = [
+const balancedPending = [
   { after: 1, kind: 'upgrade', x: 445, y: 255 },
   { after: 1, kind: 'upgrade', x: 350, y: 245 },
   { after: 2, kind: 'build', type: 'siege', x: 400, y: 60 },
@@ -34,6 +34,39 @@ const pending = [
   { after: 9, kind: 'upgrade', x: 860, y: 400 },
   { after: 9, kind: 'upgrade', x: 930, y: 360 },
 ];
+const controlPending = [
+  { after: 1, kind: 'upgrade', x: 350, y: 245 },
+  { after: 1, kind: 'upgrade', x: 445, y: 255 },
+  { after: 2, kind: 'build', type: 'archer', x: 400, y: 60 },
+  { after: 2, kind: 'upgrade', x: 400, y: 60 },
+  { after: 3, kind: 'upgrade', x: 350, y: 245 },
+  { after: 3, kind: 'upgrade', x: 445, y: 255 },
+  { after: 4, kind: 'build', type: 'frost', x: 620, y: 420 },
+  { after: 4, kind: 'upgrade', x: 620, y: 420 },
+  { after: 5, kind: 'upgrade', x: 400, y: 60 },
+  { after: 6, kind: 'build', type: 'archer', x: 620, y: 620 },
+  { after: 6, kind: 'build', type: 'archer', x: 730, y: 620 },
+  { after: 6, kind: 'upgrade', x: 620, y: 620 },
+  { after: 7, kind: 'build', type: 'archer', x: 300, y: 60 },
+  { after: 7, kind: 'upgrade', x: 300, y: 60 },
+  { after: 8, kind: 'build', type: 'frost', x: 860, y: 400 },
+  { after: 8, kind: 'build', type: 'archer', x: 930, y: 360 },
+  { after: 8, kind: 'upgrade', x: 860, y: 400 },
+  { after: 8, kind: 'upgrade', x: 930, y: 360 },
+  { after: 9, kind: 'upgrade', x: 620, y: 420 },
+  { after: 9, kind: 'upgrade', x: 620, y: 620 },
+  { after: 9, kind: 'upgrade', x: 730, y: 620 },
+  { after: 9, kind: 'upgrade', x: 860, y: 400 },
+  { after: 9, kind: 'upgrade', x: 930, y: 360 },
+];
+const strategy = process.env.TD_STRATEGY ?? 'balanced';
+const plans = {
+  balanced: { initial: [['archer', 160, 240], ['frost', 350, 245], ['archer', 445, 255]], pending: balancedPending },
+  control: { initial: [['archer', 160, 240], ['frost', 350, 245], ['frost', 445, 255]], pending: controlPending },
+};
+const plan = plans[strategy];
+if (!plan) throw new Error(`Unknown TD_STRATEGY: ${strategy}`);
+const pending = [...plan.pending];
 
 function gold() {
   return page.locator('#gold').textContent().then((value) => Number(value ?? 0));
@@ -69,10 +102,10 @@ async function upgrade(x, y) {
 
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 await page.locator('#begin').click();
+await page.locator('canvas').waitFor({ state: 'visible', timeoutMs: 15_000 });
+await page.locator('#start-screen').waitFor({ state: 'hidden', timeoutMs: 15_000 });
 await page.locator('#speed').click();
-await build('archer', 160, 240);
-await build('frost', 350, 245);
-await build('archer', 445, 255);
+for (const [type, x, y] of plan.initial) await build(type, x, y);
 await worldClick(430, 285, { button: 'right' });
 await page.locator('#start-wave').click();
 
@@ -111,6 +144,7 @@ while (Date.now() < deadline) {
 
 const result = await page.locator('#end-title').textContent().catch(() => 'TIMEOUT');
 const proof = {
+  strategy,
   verdict: result === 'Разлом запечатан' ? 'PASS' : 'FAIL',
   result,
   wave: Number(await page.locator('#wave').textContent()),

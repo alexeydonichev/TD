@@ -1,4 +1,4 @@
-import type { MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot } from './types';
+import type { DifficultyDefinition, EnemyDefinition, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot } from './types';
 
 export type PlacementFailure = 'outside' | 'path' | 'crystal' | 'forbidden' | 'occupied' | 'gold';
 
@@ -95,4 +95,13 @@ export function chainTargets(origin: Point, targets: Array<TargetSnapshot & Poin
 
 export function pointToLineDistance(point: Point, from: Point, to: Point): number {
   return pointSegmentDistance(point, from, to);
+}
+
+export function scaleEnemy(definition: EnemyDefinition, difficulty: DifficultyDefinition): EnemyDefinition {
+  return {
+    ...definition,
+    maxHp: Math.round(definition.maxHp * difficulty.enemyHp),
+    speed: definition.speed * difficulty.enemySpeed,
+    reward: Math.max(1, Math.round(definition.reward * difficulty.enemyReward)),
+  };
 }

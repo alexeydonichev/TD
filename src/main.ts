@@ -1,10 +1,9 @@
-import Phaser from 'phaser';
 import './style.css';
-import { GAME_HEIGHT, GAME_WIDTH, HERO, TOWERS } from './core/config';
-import type { TowerType } from './core/types';
+import { DIFFICULTIES, GAME_HEIGHT, GAME_WIDTH, HERO, TOWERS } from './core/config';
+import type { Difficulty, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
 import { emit, on } from './game/bus';
-import { GameScene, type HudState } from './game/GameScene';
+import type { HudState } from './game/GameScene';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
@@ -16,9 +15,12 @@ app.innerHTML = `
       <div class="resource lives"><span>♦</span><div><small>КРИСТАЛЛ</small><b id="lives">20</b></div></div>
       <div class="resource"><span>☷</span><div><small>ВОЛНА</small><b><i id="wave">0</i>/10</b></div></div>
       <div class="resource"><span>⚔</span><div><small>ОСТАЛОСЬ</small><b id="remaining">0</b></div></div>
+      <div class="resource score"><span>✦</span><div><small>СЧЁТ</small><b id="score">0</b></div></div>
       <div class="top-actions">
+        <span id="difficulty-badge" class="difficulty-badge">ЗАЩИТНИК</span>
         <button id="music" class="icon-button" title="Музыка">♫</button>
         <button id="effects" class="icon-button" title="Эффекты">✦</button>
+        <button id="settings" class="icon-button" title="Доступность и помощь" aria-label="Открыть настройки доступности">⚙</button>
         <button id="pause" class="icon-button" title="Пауза">Ⅱ</button>
         <button id="speed" class="speed-button">×1</button>
       </div>
@@ -28,6 +30,7 @@ app.innerHTML = `
       <div class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА</div>
       <h2 id="wave-title">Разведчики Разлома</h2>
       <p id="wave-intel">Налётчики · наземные</p>
+      <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
       <div class="wave-row"><span id="countdown">00:12</span><button id="start-wave" class="primary">Начать досрочно <kbd>+золото</kbd></button></div>
     </aside>
 
@@ -75,6 +78,11 @@ app.innerHTML = `
       <div class="eyebrow">ОРИГИНАЛЬНАЯ ФЭНТЕЗИ TOWER DEFENSE</div>
       <h1>Долина <span>Разлома</span></h1>
       <p>Защитите Кристалл, проведите Стража Грозы через десять волн и сокрушите Владыку Разлома.</p>
+      <div class="difficulty-picker" role="radiogroup" aria-label="Сложность">
+        ${difficultyButton('story')}
+        ${difficultyButton('standard')}
+        ${difficultyButton('rift')}
+      </div>
       <button id="begin" class="start-button">НАЧАТЬ ИГРУ</button>
       <div class="controls"><span>ПКМ · герой</span><span>1–4 · башни</span><span>Q/W/E/R · умения</span><span>Space · пауза</span></div>
     </div>
@@ -87,16 +95,40 @@ app.innerHTML = `
       <button id="restart" class="start-button">СЫГРАТЬ ЕЩЁ РАЗ</button>
     </div>
     <div id="pause-label" class="pause-label hidden">ПАУЗА</div>
+    <aside id="tutorial" class="tutorial glass hidden" aria-live="polite">
+      <div class="eyebrow">ПУТЬ ХРАНИТЕЛЯ <span id="tutorial-progress"></span></div>
+      <h3 id="tutorial-title"></h3>
+      <p id="tutorial-copy"></p>
+      <div><button id="tutorial-next" class="primary">Далее</button><button id="tutorial-skip">Пропустить обучение</button></div>
+    </aside>
+    <div id="settings-dialog" class="settings-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section class="glass">
+        <div class="eyebrow">ИНТЕРФЕЙС И ДОСТУПНОСТЬ</div>
+        <h2 id="settings-title">Настройки восприятия</h2>
+        <label><input id="high-contrast" type="checkbox"> Высокая контрастность</label>
+        <label><input id="large-text" type="checkbox"> Увеличенный текст HUD</label>
+        <label><input id="reduce-motion" type="checkbox"> Уменьшить анимации</label>
+        <label><input id="screen-shake" type="checkbox"> Встряска камеры</label>
+        <p><b>Клавиатура:</b> 1–4 башни · Q/W/E/R умения · Space пауза · F герой · Esc отмена.</p>
+        <button id="close-settings" class="primary">Готово</button>
+      </section>
+    </div>
+    <div id="announcer" class="sr-only" aria-live="assertive"></div>
   </main>
 `;
 
+function difficultyButton(id: Difficulty): string {
+  const difficulty = DIFFICULTIES[id];
+  return `<button class="difficulty-option" data-difficulty="${id}" role="radio" aria-checked="false"><b>${difficulty.name}</b><small>${difficulty.description}</small><i>×${difficulty.scoreMultiplier} к счёту</i></button>`;
+}
+
 function buildButton(type: TowerType, key: string, icon: string): string {
   const tower = TOWERS[type];
-  return `<button class="build-button" data-tower="${type}" title="${tower.description}"><kbd>${key}</kbd><i>${icon}</i><span>${tower.name.replace(' башня', '')}<b>◈ ${tower.cost}</b></span></button>`;
+  return `<button class="build-button" data-tower="${type}" title="${tower.description}" aria-label="${tower.name}, стоимость ${tower.cost}"><kbd>${key}</kbd><i aria-hidden="true">${icon}</i><span>${tower.name.replace(' башня', '')}<b>◈ ${tower.cost}</b></span></button>`;
 }
 
 function abilityButton(key: string, hotkey: string, icon: string, name: string, mana: number): string {
-  return `<button class="ability" data-ability="${key}" title="${name}"><kbd>${hotkey}</kbd><i>${icon}</i><small>${mana}</small><span class="cooldown"></span></button>`;
+  return `<button class="ability" data-ability="${key}" title="${name}" aria-label="${name}, мана ${mana}"><kbd>${hotkey}</kbd><i aria-hidden="true">${icon}</i><small>${mana}</small><span class="cooldown"></span></button>`;
 }
 
 function bar(id: string, label: string): string {
@@ -106,23 +138,37 @@ function bar(id: string, label: string): string {
 const get = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const audio = new AudioManager();
 let latestState: HudState | null = null;
+let gameLoad: Promise<void> | null = null;
+let selectedDifficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
+const isTestMode = new URLSearchParams(window.location.search).get('test') === '1';
+let lastAnnouncedWave = -1;
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: 'game',
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
-  backgroundColor: '#101522',
-  antialias: true,
-  render: { pixelArt: false, roundPixels: true },
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [GameScene],
-});
+async function ensureGame(): Promise<void> {
+  if (gameLoad) return gameLoad;
+  gameLoad = (async () => {
+    const ready = new Promise<void>((resolve) => {
+      const off = on<HudState>('td:state', () => { off(); resolve(); });
+    });
+    const [{ default: Phaser }, { GameScene }] = await Promise.all([import('phaser'), import('./game/GameScene')]);
+    new Phaser.Game({
+      type: Phaser.AUTO, parent: 'game', width: GAME_WIDTH, height: GAME_HEIGHT, backgroundColor: '#101522', antialias: true,
+      render: { pixelArt: false, roundPixels: true }, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [GameScene],
+    });
+    await ready;
+  })();
+  return gameLoad;
+}
 
-get<HTMLButtonElement>('begin').addEventListener('click', () => {
+get<HTMLButtonElement>('begin').addEventListener('click', async () => {
   audio.unlock();
+  const begin = get<HTMLButtonElement>('begin');
+  begin.disabled = true;
+  begin.textContent = 'ЗАГРУЗКА ДОЛИНЫ…';
+  localStorage.setItem('rift-difficulty', selectedDifficulty);
+  await ensureGame();
   get('start-screen').classList.add('hidden');
   emit('td:action', { type: 'begin' });
+  if (!isTestMode && localStorage.getItem('rift-tutorial-seen') !== 'yes') showTutorial(0);
 });
 get<HTMLButtonElement>('start-wave').addEventListener('click', () => emit('td:action', { type: 'start-wave' }));
 get<HTMLButtonElement>('pause').addEventListener('click', () => emit('td:action', { type: 'pause' }));
@@ -144,12 +190,97 @@ get<HTMLButtonElement>('effects').addEventListener('click', () => {
   updateAudioButtons();
 });
 
+document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
+  button.addEventListener('click', () => {
+    selectedDifficulty = button.dataset.difficulty as Difficulty;
+    localStorage.setItem('rift-difficulty', selectedDifficulty);
+    updateDifficultyPicker();
+  });
+});
+
+const accessibilitySettings = {
+  highContrast: localStorage.getItem('rift-high-contrast') === 'on',
+  largeText: localStorage.getItem('rift-large-text') === 'on',
+  reduceMotion: localStorage.getItem('rift-reduce-motion') === 'on',
+  screenShake: localStorage.getItem('rift-screen-shake') !== 'off',
+};
+
+function applyAccessibility(): void {
+  document.body.classList.toggle('high-contrast', accessibilitySettings.highContrast);
+  document.body.classList.toggle('large-text', accessibilitySettings.largeText);
+  document.body.classList.toggle('reduce-motion', accessibilitySettings.reduceMotion);
+  get<HTMLInputElement>('high-contrast').checked = accessibilitySettings.highContrast;
+  get<HTMLInputElement>('large-text').checked = accessibilitySettings.largeText;
+  get<HTMLInputElement>('reduce-motion').checked = accessibilitySettings.reduceMotion;
+  get<HTMLInputElement>('screen-shake').checked = accessibilitySettings.screenShake;
+}
+
+for (const [id, key, storage] of [
+  ['high-contrast', 'highContrast', 'rift-high-contrast'], ['large-text', 'largeText', 'rift-large-text'],
+  ['reduce-motion', 'reduceMotion', 'rift-reduce-motion'], ['screen-shake', 'screenShake', 'rift-screen-shake'],
+] as const) {
+  get<HTMLInputElement>(id).addEventListener('change', (event) => {
+    accessibilitySettings[key] = (event.target as HTMLInputElement).checked;
+    localStorage.setItem(storage, accessibilitySettings[key] ? 'on' : 'off');
+    applyAccessibility();
+  });
+}
+
+get('settings').addEventListener('click', () => get('settings-dialog').classList.remove('hidden'));
+get('close-settings').addEventListener('click', () => get('settings-dialog').classList.add('hidden'));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !get('settings-dialog').classList.contains('hidden')) get('settings-dialog').classList.add('hidden');
+});
+
+const tutorialSteps = [
+  ['Постройте первую башню', 'Нажмите 1–4 или выберите башню внизу, затем укажите свободное место рядом с маршрутом.', '.build-panel'],
+  ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото.', '.wave-card'],
+  ['Переместите героя', 'Нажмите правой кнопкой на карте. Страж Грозы сам атакует врагов рядом.', '.hero-panel'],
+  ['Примените умение', 'Q поражает цепью целей, W совершает рывок, E усиливает защиту. R откроется на 3 уровне.', '.abilities'],
+  ['Улучшите защиту', 'Выберите построенную башню и повысьте её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
+] as const;
+let tutorialStep = -1;
+
+function showTutorial(step: number): void {
+  document.querySelectorAll('.tutorial-focus').forEach((element) => element.classList.remove('tutorial-focus'));
+  if (step < 0 || step >= tutorialSteps.length) {
+    tutorialStep = -1;
+    get('tutorial').classList.add('hidden');
+    localStorage.setItem('rift-tutorial-seen', 'yes');
+    return;
+  }
+  tutorialStep = step;
+  const [title, copy, selector] = tutorialSteps[step];
+  get('tutorial-title').textContent = title;
+  get('tutorial-copy').textContent = copy;
+  get('tutorial-progress').textContent = `${step + 1}/${tutorialSteps.length}`;
+  get('tutorial').classList.remove('hidden');
+  document.querySelector(selector)?.classList.add('tutorial-focus');
+  get('tutorial-next').textContent = step === tutorialSteps.length - 1 ? 'Завершить' : 'Далее';
+}
+
+get('tutorial-next').addEventListener('click', () => showTutorial(tutorialStep + 1));
+get('tutorial-skip').addEventListener('click', () => showTutorial(-1));
+get('game').addEventListener('pointerdown', (event) => {
+  if ((event as PointerEvent).button === 2 && tutorialStep === 2) showTutorial(3);
+});
+
 on<SoundName>('td:sound', (sound) => audio.play(sound));
 on<HudState>('td:state', (state) => {
   latestState = state;
   renderHud(state);
 });
 updateAudioButtons();
+updateDifficultyPicker();
+applyAccessibility();
+
+function updateDifficultyPicker(): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
+    const selected = button.dataset.difficulty === selectedDifficulty;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-checked', String(selected));
+  });
+}
 
 function updateAudioButtons(): void {
   get('music').classList.toggle('muted', !audio.musicEnabled);
@@ -161,8 +292,12 @@ function renderHud(state: HudState): void {
   get('lives').textContent = String(state.lives);
   get('wave').textContent = String(state.wave);
   get('remaining').textContent = String(state.remaining);
+  get('score').textContent = state.score.toLocaleString('ru-RU');
+  get('difficulty-badge').textContent = state.difficultyName.toUpperCase();
   get('wave-title').textContent = state.waveTitle;
   get('wave-intel').textContent = state.waveIntel;
+  const hintedWave = Math.max(1, state.waveActive ? state.wave : state.wave + 1);
+  get('strategy-hint').textContent = strategyHint(hintedWave);
   get('countdown').textContent = state.waveActive ? 'ИДЁТ ВОЛНА' : `00:${Math.ceil(state.countdown).toString().padStart(2, '0')}`;
   get<HTMLButtonElement>('start-wave').disabled = state.waveActive || state.wave >= state.totalWaves || state.result !== 'playing';
   get<HTMLButtonElement>('start-wave').innerHTML = state.waveActive ? 'Волна началась' : 'Начать досрочно <kbd>+золото</kbd>';
@@ -175,6 +310,24 @@ function renderHud(state: HudState): void {
   renderHero(state);
   renderBoss(state);
   if (state.result !== 'playing') renderEnd(state.result);
+  if (state.wave !== lastAnnouncedWave && state.wave > 0) {
+    lastAnnouncedWave = state.wave;
+    get('announcer').textContent = `Началась волна ${state.wave}: ${state.waveTitle}. ${state.waveIntel}`;
+  }
+  if (tutorialStep === 0 && state.towerCount > 0) showTutorial(1);
+  if (tutorialStep === 1 && state.waveActive) showTutorial(2);
+  const usedAbility = Object.values(state.hero.abilities).some((ability) => ability.cooldown > 0);
+  if (tutorialStep === 3 && usedAbility) showTutorial(4);
+  if (tutorialStep === 4 && (state.selectedTower?.level ?? 0) > 1) showTutorial(-1);
+}
+
+function strategyHint(wave: number): string {
+  if (wave <= 2) return 'Стрелковые башни — надёжный первый рубеж.';
+  if (wave <= 4) return 'Лёд контролирует быстрые группы, стрелки добивают лидера.';
+  if (wave <= 7) return 'Осадные залпы пробивают броню и плотные построения.';
+  if (wave === 8) return 'Воздух: нужны стрелковые или ледяные башни и герой.';
+  if (wave === 9) return 'Сочетайте урон по площади, замедление и усиление.';
+  return 'Сохраните ману для щита босса и второй фазы.';
 }
 
 function renderTowerPanel(state: HudState): void {
@@ -231,7 +384,8 @@ function renderEnd(result: 'victory' | 'defeat'): void {
   get('end-kicker').textContent = victory ? 'КРИСТАЛЛ СПАСЁН' : 'КРИСТАЛЛ РАЗРУШЕН';
   get('end-title').textContent = victory ? 'Разлом запечатан' : 'Долина пала';
   get('end-copy').textContent = victory
-    ? 'Все 10 волн отражены. Владыка Разлома повержен.'
+    ? `Все 10 волн отражены. Счёт: ${latestState?.score.toLocaleString('ru-RU') ?? 0}.`
     : `Вы продержались до волны ${latestState?.wave ?? 0}. Измените расстановку и попробуйте снова.`;
   get('end-rune').textContent = victory ? '◆' : '◇';
+  get('announcer').textContent = victory ? 'Победа. Разлом запечатан.' : 'Поражение. Кристалл разрушен.';
 }

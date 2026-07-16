@@ -2,6 +2,19 @@ export type Point = { x: number; y: number };
 export type TowerType = 'archer' | 'frost' | 'siege' | 'boost';
 export type EnemyType = 'raider' | 'runner' | 'brute' | 'winged' | 'boss';
 export type TargetMode = 'first' | 'strongest';
+export type Difficulty = 'story' | 'standard' | 'rift';
+
+export interface DifficultyDefinition {
+  id: Difficulty;
+  name: string;
+  description: string;
+  enemyHp: number;
+  enemySpeed: number;
+  enemyReward: number;
+  startingGold: number;
+  crystalLives: number;
+  scoreMultiplier: number;
+}
 
 export interface TowerLevel {
   damage: number;

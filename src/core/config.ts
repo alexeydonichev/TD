@@ -1,4 +1,4 @@
-import type { EnemyDefinition, Point, TowerDefinition, WaveDefinition } from './types';
+import type { DifficultyDefinition, EnemyDefinition, Point, TowerDefinition, WaveDefinition } from './types';
 
 export const GAME_WIDTH = 1200;
 export const GAME_HEIGHT = 700;
@@ -7,6 +7,21 @@ export const STARTING_LIVES = 20;
 export const INTERMISSION_SECONDS = 12;
 export const EARLY_START_GOLD_PER_SECOND = 2;
 export const WAVE_CLEAR_GOLD = 35;
+
+export const DIFFICULTIES: Record<string, DifficultyDefinition> = {
+  story: {
+    id: 'story', name: 'Хранитель', description: 'Больше ресурсов, спокойнее темп', enemyHp: 0.78,
+    enemySpeed: 0.9, enemyReward: 1.18, startingGold: 520, crystalLives: 26, scoreMultiplier: 0.75,
+  },
+  standard: {
+    id: 'standard', name: 'Защитник', description: 'Авторский баланс карты', enemyHp: 1,
+    enemySpeed: 1, enemyReward: 1, startingGold: STARTING_GOLD, crystalLives: STARTING_LIVES, scoreMultiplier: 1,
+  },
+  rift: {
+    id: 'rift', name: 'Повелитель бури', description: 'Сильнее враги, меньше ресурсов', enemyHp: 1.28,
+    enemySpeed: 1.1, enemyReward: 0.9, startingGold: 360, crystalLives: 14, scoreMultiplier: 1.5,
+  },
+};
 
 export const PATH: Point[] = [
   { x: 28, y: 330 },
