@@ -3,7 +3,10 @@ import {
   CRYSTAL, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
   INTERMISSION_SECONDS, PATH, TOWERS, WAVES,
 } from '../core/config';
-import { applyArmor, applySlow, chainTargets, distance, loseLives, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue } from '../core/rules';
+import {
+  applyArmor, applySlow, chainTargets, distance, loseLives, placementFailure, pointToLineDistance, scaleEnemy,
+  selectTarget, sellValue, waveHpMultiplier, waveSpeedMultiplier,
+} from '../core/rules';
 import type { Difficulty, EnemyType, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
 
@@ -11,6 +14,7 @@ type Action =
   | { type: 'begin' } | { type: 'build'; tower: TowerType } | { type: 'start-wave' }
   | { type: 'pause' } | { type: 'speed' } | { type: 'upgrade' } | { type: 'sell' }
   | { type: 'target' } | { type: 'ability'; key: 'q' | 'w' | 'e' | 'r' }
+  | { type: 'zoom'; direction: 'in' | 'out' | 'reset' }
   | { type: 'difficulty'; difficulty: Difficulty };
 
 interface TowerUnit {
@@ -105,8 +109,9 @@ export interface HudState {
   buildType: TowerType | null;
   placementMessage: string;
   selectedTower: null | { name: string; level: number; mode: string; nextCost: number | null; sellValue: number; description: string };
-  hero: { hp: number; maxHp: number; mana: number; maxMana: number; xp: number; xpNext: number; level: number; alive: boolean; respawn: number; abilities: Record<string, { cooldown: number; mana: number; locked: boolean }> };
-  boss: null | { hp: number; maxHp: number; phase: number; shielded: boolean };
+  hero: { x: number; y: number; hp: number; maxHp: number; mana: number; maxMana: number; xp: number; xpNext: number; level: number; alive: boolean; respawn: number; abilities: Record<string, { cooldown: number; mana: number; locked: boolean }> };
+  boss: null | { name: string; hp: number; maxHp: number; phase: number; shielded: boolean };
+  cameraZoom: number;
   result: 'playing' | 'victory' | 'defeat';
 }
 
@@ -114,7 +119,7 @@ declare global {
   interface Window {
     __TD_TEST__?: {
       state: () => HudState;
-      skipToBoss: () => void;
+      skipToBoss: (tier?: 1 | 2 | 3) => void;
       defeat: () => void;
       spawnStress: (count: number) => void;
       metrics: () => { activeEnemies: number; gameObjects: number; averageFrameMs: number; fps: number };
@@ -151,6 +156,7 @@ export class GameScene extends Phaser.Scene {
   private placementMessage = '';
   private preview!: Phaser.GameObjects.Graphics;
   private selectionRing!: Phaser.GameObjects.Graphics;
+  private heroTargetMarker!: Phaser.GameObjects.Graphics;
   private hero!: HeroState;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private routeLengths: number[] = [];
@@ -159,12 +165,17 @@ export class GameScene extends Phaser.Scene {
   private frameSamples: number[] = [];
   private reduceMotion = localStorage.getItem('rift-reduce-motion') === 'on';
   private screenShake = localStorage.getItem('rift-screen-shake') !== 'off';
+  private cameraTargetZoom = 1.08;
+  private cameraDragging = false;
+  private cameraDragX = 0;
+  private cameraDragY = 0;
 
   constructor() {
     super('valley');
   }
 
   preload(): void {
+    this.load.image('valley-landscape', 'assets/rift-valley-map-v3.png');
     this.load.spritesheet('tower-art', 'assets/towers-atlas.png', { frameWidth: 512, frameHeight: 512 });
     this.load.spritesheet('unit-art', 'assets/units-atlas.png', { frameWidth: 320, frameHeight: 480 });
   }
@@ -175,11 +186,19 @@ export class GameScene extends Phaser.Scene {
     this.createAtmosphere();
     this.preview = this.add.graphics().setDepth(40);
     this.selectionRing = this.add.graphics().setDepth(35);
+    this.heroTargetMarker = this.add.graphics().setDepth(13);
     this.createHero();
     this.input.mouse?.disableContextMenu();
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => this.drawPlacementPreview(pointer));
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      this.drawPlacementPreview(pointer);
+      this.handleCameraDrag(pointer);
+    });
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.handlePointer(pointer));
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,Q,E,R,SPACE,F,ESC,ONE,TWO,THREE,FOUR') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.input.on('pointerup', () => { this.cameraDragging = false; });
+    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _objects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      this.setCameraZoom(dy < 0 ? 'in' : 'out');
+    });
+    this.keys = this.input.keyboard!.addKeys('W,A,S,D,Q,E,R,SHIFT,UP,DOWN,LEFT,RIGHT,SPACE,F,ESC,ONE,TWO,THREE,FOUR') as Record<string, Phaser.Input.Keyboard.Key>;
     this.keys.ONE.on('down', () => this.chooseBuild('archer'));
     this.keys.TWO.on('down', () => this.chooseBuild('frost'));
     this.keys.THREE.on('down', () => this.chooseBuild('siege'));
@@ -188,17 +207,17 @@ export class GameScene extends Phaser.Scene {
     this.keys.SPACE.on('down', () => this.togglePause());
     this.keys.F.on('down', () => this.cameras.main.centerOn(this.hero.x, this.hero.y));
     this.keys.Q.on('down', () => this.useAbility('q'));
-    this.keys.W.on('down', () => this.useAbility('w'));
+    this.keys.SHIFT.on('down', () => this.useAbility('w'));
     this.keys.E.on('down', () => this.useAbility('e'));
     this.keys.R.on('down', () => this.useAbility('r'));
     this.offAction = on<Action>('td:action', (action) => this.handleAction(action));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.offAction?.());
-    this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT).setZoom(1);
+    this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT).setZoom(this.cameraTargetZoom).centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
     this.emitHud(true);
     if (TEST_MODE) {
       window.__TD_TEST__ = {
         state: () => this.getHudState(),
-        skipToBoss: () => this.skipToBoss(),
+        skipToBoss: (tier) => this.skipToBoss(tier),
         defeat: () => { this.lives = 0; this.finish('defeat'); },
         spawnStress: (count) => this.spawnStress(count),
         metrics: () => this.getPerformanceMetrics(),
@@ -238,22 +257,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawMap(): void {
-    const background = this.add.graphics();
-    background.fillGradientStyle(0x172636, 0x172636, 0x0d1321, 0x0d1321, 1);
-    background.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    background.lineStyle(3, 0x4d755c, 0.45).strokeRoundedRect(12, 12, GAME_WIDTH - 24, GAME_HEIGHT - 24, 24);
-    for (let x = 45; x < GAME_WIDTH; x += 95) {
-      for (let y = 52; y < GAME_HEIGHT; y += 92) {
-        const shade = (x + y) % 3 === 0 ? 0x304d3e : 0x294437;
-        background.fillStyle(shade, 0.25).fillCircle(x, y, 18 + ((x * y) % 13));
-      }
-    }
+    this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'valley-landscape')
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-30).setTint(0xc4d0c8);
+    const background = this.add.graphics().setDepth(-20);
+    background.fillStyle(0x07111d, 0.17).fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    background.lineStyle(3, 0x86b297, 0.48).strokeRoundedRect(12, 12, GAME_WIDTH - 24, GAME_HEIGHT - 24, 24);
     FORBIDDEN_ZONES.forEach((zone, index) => {
-      background.fillStyle(index % 2 ? 0x263a32 : 0x352d43, 0.95).fillCircle(zone.x + 8, zone.y + 10, zone.radius);
-      background.lineStyle(2, 0x6d7e68, 0.55).strokeCircle(zone.x, zone.y, zone.radius);
+      background.fillStyle(index % 2 ? 0x64d7b8 : 0xb165e7, 0.035).fillCircle(zone.x, zone.y, zone.radius);
+      background.lineStyle(1.5, index % 2 ? 0x82d8bc : 0xbd7bf0, 0.26).strokeCircle(zone.x, zone.y, zone.radius);
       for (let rock = 0; rock < 5; rock += 1) {
         const angle = (rock / 5) * Math.PI * 2;
-        background.fillStyle(0x52635c, 0.75).fillTriangle(
+        background.fillStyle(index % 2 ? 0x92b8a4 : 0x9d73bc, 0.42).fillTriangle(
           zone.x + Math.cos(angle) * zone.radius * 0.55,
           zone.y + Math.sin(angle) * zone.radius * 0.55 - 10,
           zone.x + Math.cos(angle) * zone.radius * 0.55 - 10,
@@ -263,14 +277,14 @@ export class GameScene extends Phaser.Scene {
         );
       }
     });
-    const road = this.add.graphics();
-    road.lineStyle(74, 0x14111d, 0.7).beginPath().moveTo(PATH[0].x + 7, PATH[0].y + 10);
+    const road = this.add.graphics().setDepth(-10);
+    road.lineStyle(76, 0x0b0712, 0.18).beginPath().moveTo(PATH[0].x + 5, PATH[0].y + 7);
     PATH.slice(1).forEach((point) => road.lineTo(point.x + 7, point.y + 10));
     road.strokePath();
-    road.lineStyle(66, 0x50485a, 1).beginPath().moveTo(PATH[0].x, PATH[0].y);
+    road.lineStyle(61, 0xd9c39e, 0.08).beginPath().moveTo(PATH[0].x, PATH[0].y);
     PATH.slice(1).forEach((point) => road.lineTo(point.x, point.y));
     road.strokePath();
-    road.lineStyle(2, 0xa995a9, 0.35).beginPath().moveTo(PATH[0].x, PATH[0].y);
+    road.lineStyle(2, 0xffe6ac, 0.38).beginPath().moveTo(PATH[0].x, PATH[0].y);
     PATH.slice(1).forEach((point) => road.lineTo(point.x, point.y));
     road.strokePath();
     const portal = this.add.graphics();
@@ -341,18 +355,43 @@ export class GameScene extends Phaser.Scene {
     else if (action.type === 'sell') this.sellSelected();
     else if (action.type === 'target') this.toggleTargetMode();
     else if (action.type === 'ability') this.useAbility(action.key);
+    else if (action.type === 'zoom') this.setCameraZoom(action.direction);
     this.emitHud(true);
   }
 
   private handlePointer(pointer: Phaser.Input.Pointer): void {
+    if (pointer.middleButtonDown()) {
+      this.cameraDragging = true;
+      this.cameraDragX = pointer.x;
+      this.cameraDragY = pointer.y;
+      return;
+    }
+    this.cameraDragging = false;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     if (pointer.rightButtonDown()) {
       this.hero.target = { x: Phaser.Math.Clamp(world.x, 20, GAME_WIDTH - 20), y: Phaser.Math.Clamp(world.y, 20, GAME_HEIGHT - 20) };
+      this.drawHeroTargetMarker();
       this.chooseBuild(null);
       return;
     }
     if (this.buildType) this.placeTower(world);
     else this.selectTowerAt(world);
+  }
+
+  private handleCameraDrag(pointer: Phaser.Input.Pointer): void {
+    if (!this.cameraDragging || !pointer.isDown) return;
+    const camera = this.cameras.main;
+    camera.scrollX -= (pointer.x - this.cameraDragX) / camera.zoom;
+    camera.scrollY -= (pointer.y - this.cameraDragY) / camera.zoom;
+    this.cameraDragX = pointer.x;
+    this.cameraDragY = pointer.y;
+  }
+
+  private drawHeroTargetMarker(): void {
+    this.heroTargetMarker.clear();
+    if (!this.hero.alive) return;
+    this.heroTargetMarker.lineStyle(2, 0x9ef5ff, 0.85).strokeCircle(this.hero.target.x, this.hero.target.y, 12)
+      .lineStyle(1, 0xffdf7d, 0.8).strokeCircle(this.hero.target.x, this.hero.target.y, 5);
   }
 
   private chooseBuild(type: TowerType | null): void {
@@ -493,7 +532,8 @@ export class GameScene extends Phaser.Scene {
       at += (TEST_MODE ? 60 : 500);
     }
     this.countdown = 0;
-    emit('td:sound', this.currentWave === 10 ? 'boss' : 'wave');
+    const bossWave = WAVES[this.currentWave - 1].spawns.some((spawn) => this.isBossType(spawn.type));
+    emit('td:sound', bossWave ? 'boss' : 'wave');
     this.emitHud(true);
   }
 
@@ -520,12 +560,12 @@ export class GameScene extends Phaser.Scene {
     const definition = this.enemyDefinition(type);
     const position = this.pointAtProgress(progress);
     const art = this.add.graphics();
-    const frame = { raider: 0, runner: 1, brute: 2, winged: 3, boss: 4 }[type];
-    const spriteScale = { raider: 0.095, runner: 0.09, brute: 0.125, winged: 0.115, boss: 0.19 }[type];
-    const sprite = this.add.image(0, type === 'boss' ? -28 : -18, 'unit-art', frame).setScale(spriteScale);
+    const frame = { raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 4, boss: 4 }[type];
+    const spriteScale = { raider: 0.095, runner: 0.09, brute: 0.125, winged: 0.115, warden: 0.16, titan: 0.185, boss: 0.21 }[type];
+    const sprite = this.add.image(0, this.isBossType(type) ? -28 : -18, 'unit-art', frame).setScale(spriteScale);
     const hpBar = this.add.graphics();
     const container = this.add.container(position.x, position.y, [art, sprite, hpBar]).setDepth(type === 'winged' ? 25 : 16);
-    const maxHp = definition.maxHp * ENEMY_HP_SCALE;
+    const maxHp = definition.maxHp * waveHpMultiplier(this.currentWave) * ENEMY_HP_SCALE;
     const enemy: EnemyUnit = {
       id: this.nextId++, type, hp: maxHp, maxHp, progress, alive: true, slow: 0, slowUntil: 0, phase: 1,
       shieldUntil: 0, lastShieldAt: this.simTime, summonedPhase: false, contactCooldown: 0, container, art, sprite, hpBar,
@@ -545,22 +585,23 @@ export class GameScene extends Phaser.Scene {
     const definition = this.enemyDefinition(enemy.type);
     const art = enemy.art.clear();
     art.fillStyle(0x070914, 0.62).fillEllipse(5, definition.radius * 0.85, definition.radius * 2.5, definition.radius);
-    if (enemy.type === 'boss') {
-      art.fillStyle(0xff3f9a, 0.13).fillCircle(0, -10, definition.radius + 18);
-      art.lineStyle(5, enemy.shieldUntil > this.simTime ? 0xaeefff : 0xff62bc, 0.92).strokeCircle(0, -10, definition.radius + 14);
+    if (this.isBossType(enemy.type)) {
+      art.fillStyle(definition.color, 0.15).fillCircle(0, -10, definition.radius + 18);
+      art.lineStyle(5, enemy.shieldUntil > this.simTime ? 0xaeefff : definition.color, 0.94).strokeCircle(0, -10, definition.radius + 14);
     } else {
       art.fillStyle(definition.color, 0.1).fillCircle(0, -7, definition.radius + 8);
       art.lineStyle(2, definition.color, 0.46).strokeCircle(0, -7, definition.radius + 6);
       if (enemy.type === 'brute') art.lineStyle(5, 0xbbb0c6, 0.85).strokeCircle(0, 0, definition.radius + 3);
     }
-    enemy.sprite.setFrame({ raider: 0, runner: 1, brute: 2, winged: 3, boss: 4 }[enemy.type]);
-    enemy.sprite.setTint(enemy.slowUntil > this.simTime ? 0xb9f4ff : 0xffffff);
+    enemy.sprite.setFrame({ raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 4, boss: 4 }[enemy.type]);
+    const bossTint = enemy.type === 'warden' ? 0xd79cff : enemy.type === 'titan' ? 0xffa070 : 0xffffff;
+    enemy.sprite.setTint(enemy.slowUntil > this.simTime ? 0xb9f4ff : bossTint);
     this.drawEnemyHealth(enemy);
   }
 
   private drawEnemyHealth(enemy: EnemyUnit): void {
     const definition = this.enemyDefinition(enemy.type);
-    const width = enemy.type === 'boss' ? 72 : 34;
+    const width = this.isBossType(enemy.type) ? 76 : 34;
     enemy.hpBar.clear().fillStyle(0x120e18, 0.9).fillRect(-width / 2, -definition.radius - 14, width, 5)
       .fillStyle(enemy.hp / enemy.maxHp > 0.35 ? 0x6ee07a : 0xff5d72, 1).fillRect(-width / 2, -definition.radius - 14, width * Math.max(0, enemy.hp / enemy.maxHp), 5);
   }
@@ -569,8 +610,9 @@ export class GameScene extends Phaser.Scene {
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
       const definition = this.enemyDefinition(enemy.type);
-      if (enemy.type === 'boss') {
-        if (this.simTime - enemy.lastShieldAt >= (TEST_MODE ? 2500 : 9000)) {
+      if (this.isBossType(enemy.type)) {
+        const shieldInterval = enemy.type === 'warden' ? 10500 : enemy.type === 'titan' ? 8500 : 7000;
+        if (this.simTime - enemy.lastShieldAt >= (TEST_MODE ? 2500 : shieldInterval)) {
           enemy.lastShieldAt = this.simTime;
           enemy.shieldUntil = this.simTime + (TEST_MODE ? 450 : 3000);
           this.drawEnemy(enemy);
@@ -581,19 +623,22 @@ export class GameScene extends Phaser.Scene {
           if (this.screenShake && !this.reduceMotion) this.cameras.main.shake(380, 0.008);
           if (!enemy.summonedPhase) {
             enemy.summonedPhase = true;
-            for (let index = 0; index < 5; index += 1) this.spawnEnemy('runner', Math.max(0, enemy.progress - index * 22));
+            const summonType: EnemyType = enemy.type === 'warden' ? 'runner' : enemy.type === 'titan' ? 'raider' : 'winged';
+            const summonCount = enemy.type === 'warden' ? 5 : enemy.type === 'titan' ? 7 : 9;
+            for (let index = 0; index < summonCount; index += 1) this.spawnEnemy(summonType, Math.max(0, enemy.progress - index * 22));
           }
         }
       }
       const slow = enemy.slowUntil > this.simTime ? enemy.slow : 0;
-      const phaseMultiplier = enemy.type === 'boss' && enemy.phase === 2 ? 1.28 : 1;
-      enemy.progress += applySlow(definition.speed * ENEMY_SPEED_SCALE * phaseMultiplier, slow) * delta / 1000;
+      const phaseMultiplier = this.isBossType(enemy.type) && enemy.phase === 2 ? 1.28 : 1;
+      enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave) * ENEMY_SPEED_SCALE * phaseMultiplier, slow) * delta / 1000;
       const point = this.pointAtProgress(enemy.progress);
       enemy.container.setPosition(point.x, point.y + (definition.flying ? -18 + Math.sin(this.simTime / 120) * 5 : 0));
       if (this.hero.alive && !definition.flying && distance(point, this.hero) < definition.radius + 24 && this.simTime >= enemy.contactCooldown) {
         enemy.contactCooldown = this.simTime + 700;
         const shieldMultiplier = this.hero.sealUntil > this.simTime ? 0.4 : 1;
-        this.hero.hp -= (enemy.type === 'boss' ? 42 : 13) * shieldMultiplier;
+        const bossContactDamage = enemy.type === 'warden' ? 30 : enemy.type === 'titan' ? 46 : enemy.type === 'boss' ? 64 : 13;
+        this.hero.hp -= bossContactDamage * shieldMultiplier;
         if (this.hero.hp <= 0) this.killHero();
       }
       if (enemy.progress >= this.routeTotal) this.enemyReachedCrystal(enemy);
@@ -602,7 +647,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private enemyReachedCrystal(enemy: EnemyUnit): void {
-    this.lives = loseLives(this.lives, this.enemyDefinition(enemy.type).crystalDamage);
+    this.lives = enemy.type === 'boss' ? 0 : loseLives(this.lives, this.enemyDefinition(enemy.type).crystalDamage);
     this.destroyEnemy(enemy, false);
     this.cameraFlash(0xff486c);
     if (this.lives <= 0) this.finish('defeat');
@@ -615,7 +660,7 @@ export class GameScene extends Phaser.Scene {
       const reward = this.enemyDefinition(enemy.type).reward;
       this.gold += reward;
       this.score += Math.round(reward * 10 * DIFFICULTIES[this.difficulty].scoreMultiplier);
-      this.hero.xp += enemy.type === 'boss' ? 240 : 18;
+      this.hero.xp += this.isBossType(enemy.type) ? 240 : 18;
       this.updateHeroLevel();
     }
     if (!this.reduceMotion) {
@@ -718,7 +763,7 @@ export class GameScene extends Phaser.Scene {
   private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean): void {
     if (!enemy.alive) return;
     const armor = magic ? this.enemyDefinition(enemy.type).armor * 0.2 : this.enemyDefinition(enemy.type).armor;
-    const shield = enemy.type === 'boss' && enemy.shieldUntil > this.simTime ? 0.3 : 1;
+    const shield = this.isBossType(enemy.type) && enemy.shieldUntil > this.simTime ? 0.3 : 1;
     enemy.hp -= applyArmor(rawDamage, armor) * shield;
     this.drawEnemyHealth(enemy);
     if (enemy.hp <= 0) this.destroyEnemy(enemy, true);
@@ -730,13 +775,29 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.hero.mana = Math.min(HERO.maxMana, this.hero.mana + HERO.manaRegen * delta / 1000);
-    const moveDistance = distance(this.hero, this.hero.target);
-    if (moveDistance > 3) {
-      const travel = Math.min(moveDistance, HERO.speed * (TEST_MODE ? 2 : 1) * delta / 1000);
-      const angle = Phaser.Math.Angle.Between(this.hero.x, this.hero.y, this.hero.target.x, this.hero.target.y);
-      this.hero.x += Math.cos(angle) * travel;
-      this.hero.y += Math.sin(angle) * travel;
+    const horizontal = (this.keys.D.isDown ? 1 : 0) - (this.keys.A.isDown ? 1 : 0);
+    const vertical = (this.keys.S.isDown ? 1 : 0) - (this.keys.W.isDown ? 1 : 0);
+    if (horizontal !== 0 || vertical !== 0) {
+      const length = Math.hypot(horizontal, vertical);
+      const travel = HERO.speed * (TEST_MODE ? 2 : 1) * delta / 1000;
+      this.hero.x = Phaser.Math.Clamp(this.hero.x + horizontal / length * travel, 20, GAME_WIDTH - 20);
+      this.hero.y = Phaser.Math.Clamp(this.hero.y + vertical / length * travel, 20, GAME_HEIGHT - 20);
+      this.hero.target = { x: this.hero.x, y: this.hero.y };
+      this.heroTargetMarker.clear();
+      this.hero.sprite.setFlipX(horizontal < 0);
       this.hero.container.setPosition(this.hero.x, this.hero.y);
+    } else {
+      const moveDistance = distance(this.hero, this.hero.target);
+      if (moveDistance > 3) {
+        const travel = Math.min(moveDistance, HERO.speed * (TEST_MODE ? 2 : 1) * delta / 1000);
+        const angle = Phaser.Math.Angle.Between(this.hero.x, this.hero.y, this.hero.target.x, this.hero.target.y);
+        this.hero.x += Math.cos(angle) * travel;
+        this.hero.y += Math.sin(angle) * travel;
+        this.hero.sprite.setFlipX(Math.cos(angle) < 0);
+        this.hero.container.setPosition(this.hero.x, this.hero.y);
+      } else {
+        this.heroTargetMarker.clear();
+      }
     }
     if (this.simTime >= this.hero.nextAttackAt) {
       const target = this.enemies.filter((enemy) => enemy.alive && distance(this.hero, enemy.container) <= HERO.attackRange)
@@ -755,6 +816,7 @@ export class GameScene extends Phaser.Scene {
     this.hero.hp = 0;
     this.hero.respawnAt = this.simTime + HERO.respawnSeconds * 1000;
     this.hero.container.setVisible(false);
+    this.heroTargetMarker.clear();
     emit('td:sound', 'death');
   }
 
@@ -854,18 +916,23 @@ export class GameScene extends Phaser.Scene {
   private updateCamera(delta: number): void {
     if (!this.keys) return;
     const camera = this.cameras.main;
-    const move = 0.42 * delta / camera.zoom;
-    if (this.keys.A.isDown) camera.scrollX -= move;
-    if (this.keys.D.isDown) camera.scrollX += move;
-    if (this.keys.W.isDown && !Phaser.Input.Keyboard.JustDown(this.keys.W)) camera.scrollY -= move;
-    if (this.keys.S.isDown) camera.scrollY += move;
-    const wheelHandler = (_pointer: Phaser.Input.Pointer, _objects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
-      camera.zoom = Phaser.Math.Clamp(camera.zoom - dy * 0.0005, 0.8, 1.35);
-    };
-    if (!(this as any)._wheelBound) {
-      this.input.on('wheel', wheelHandler);
-      (this as any)._wheelBound = true;
+    const move = 0.55 * delta / camera.zoom;
+    if (this.keys.LEFT.isDown) camera.scrollX -= move;
+    if (this.keys.RIGHT.isDown) camera.scrollX += move;
+    if (this.keys.UP.isDown) camera.scrollY -= move;
+    if (this.keys.DOWN.isDown) camera.scrollY += move;
+    camera.zoom = Phaser.Math.Linear(camera.zoom, this.cameraTargetZoom, Math.min(1, delta * 0.012));
+    if (Math.abs(camera.zoom - this.cameraTargetZoom) < 0.001) camera.zoom = this.cameraTargetZoom;
+  }
+
+  private setCameraZoom(direction: 'in' | 'out' | 'reset'): void {
+    if (direction === 'reset') {
+      this.cameraTargetZoom = 1.08;
+      this.cameras.main.centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+    } else {
+      this.cameraTargetZoom = Phaser.Math.Clamp(this.cameraTargetZoom + (direction === 'in' ? 0.16 : -0.16), 1, 1.72);
     }
+    this.emitHud(true);
   }
 
   private togglePause(): void {
@@ -890,12 +957,13 @@ export class GameScene extends Phaser.Scene {
     this.emitHud(true);
   }
 
-  private skipToBoss(): void {
+  private skipToBoss(tier: 1 | 2 | 3 = 3): void {
     if (!TEST_MODE) return;
     this.spawnQueue = [];
     this.enemies.forEach((enemy) => this.destroyEnemy(enemy, false));
     this.enemies = [];
-    this.currentWave = 9;
+    const bossWave = [7, 14, 20][tier - 1];
+    this.currentWave = bossWave - 1;
     this.waveActive = false;
     this.countdown = 0;
     this.startNextWave(false);
@@ -903,6 +971,10 @@ export class GameScene extends Phaser.Scene {
 
   private enemyDefinition(type: EnemyType) {
     return scaleEnemy(ENEMIES[type], DIFFICULTIES[this.difficulty]);
+  }
+
+  private isBossType(type: EnemyType): boolean {
+    return type === 'warden' || type === 'titan' || type === 'boss';
   }
 
   private spawnStress(count: number): void {
@@ -935,7 +1007,7 @@ export class GameScene extends Phaser.Scene {
     const selected = this.selectedTower;
     const definition = selected ? TOWERS[selected.type] : null;
     const nextXp = this.hero.level === 1 ? 100 : this.hero.level === 2 ? 240 : 240;
-    const boss = this.enemies.find((enemy) => enemy.type === 'boss' && enemy.alive);
+    const boss = this.enemies.find((enemy) => this.isBossType(enemy.type) && enemy.alive);
     const abilityState = (key: 'q' | 'w' | 'e' | 'r') => ({
       cooldown: Math.max(0, (this.hero.cooldowns[key] - this.simTime) / 1000),
       mana: HERO.abilities[key].mana,
@@ -955,11 +1027,12 @@ export class GameScene extends Phaser.Scene {
         sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description,
       } : null,
       hero: {
-        hp: Math.max(0, this.hero.hp), maxHp: HERO.maxHp, mana: this.hero.mana, maxMana: HERO.maxMana, xp: this.hero.xp,
+        x: this.hero.x, y: this.hero.y, hp: Math.max(0, this.hero.hp), maxHp: HERO.maxHp, mana: this.hero.mana, maxMana: HERO.maxMana, xp: this.hero.xp,
         xpNext: nextXp, level: this.hero.level, alive: this.hero.alive, respawn: Math.max(0, (this.hero.respawnAt - this.simTime) / 1000),
         abilities: { q: abilityState('q'), w: abilityState('w'), e: abilityState('e'), r: abilityState('r') },
       },
-      boss: boss ? { hp: Math.max(0, boss.hp), maxHp: boss.maxHp, phase: boss.phase, shielded: boss.shieldUntil > this.simTime } : null,
+      boss: boss ? { name: this.enemyDefinition(boss.type).name, hp: Math.max(0, boss.hp), maxHp: boss.maxHp, phase: boss.phase, shielded: boss.shieldUntil > this.simTime } : null,
+      cameraZoom: this.cameras.main.zoom,
       result: this.result,
     };
   }

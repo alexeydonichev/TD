@@ -33,6 +33,34 @@ const balancedPending = [
   { after: 9, kind: 'upgrade', x: 730, y: 620 },
   { after: 9, kind: 'upgrade', x: 860, y: 400 },
   { after: 9, kind: 'upgrade', x: 930, y: 360 },
+  { after: 10, kind: 'build', type: 'siege', x: 570, y: 300 },
+  { after: 10, kind: 'upgrade', x: 570, y: 300 },
+  { after: 10, kind: 'upgrade', x: 570, y: 300 },
+  { after: 11, kind: 'build', type: 'frost', x: 520, y: 620 },
+  { after: 11, kind: 'upgrade', x: 520, y: 620 },
+  { after: 11, kind: 'upgrade', x: 520, y: 620 },
+  { after: 12, kind: 'build', type: 'siege', x: 690, y: 430 },
+  { after: 12, kind: 'upgrade', x: 690, y: 430 },
+  { after: 12, kind: 'upgrade', x: 690, y: 430 },
+  { after: 13, kind: 'build', type: 'boost', x: 800, y: 640 },
+  { after: 13, kind: 'upgrade', x: 800, y: 640 },
+  { after: 14, kind: 'build', type: 'archer', x: 850, y: 170 },
+  { after: 14, kind: 'upgrade', x: 850, y: 170 },
+  { after: 14, kind: 'upgrade', x: 850, y: 170 },
+  { after: 15, kind: 'build', type: 'archer', x: 960, y: 170 },
+  { after: 15, kind: 'upgrade', x: 960, y: 170 },
+  { after: 15, kind: 'upgrade', x: 960, y: 170 },
+  { after: 16, kind: 'build', type: 'frost', x: 1030, y: 420 },
+  { after: 16, kind: 'upgrade', x: 1030, y: 420 },
+  { after: 16, kind: 'upgrade', x: 1030, y: 420 },
+  { after: 17, kind: 'build', type: 'archer', x: 1130, y: 500 },
+  { after: 17, kind: 'upgrade', x: 1130, y: 500 },
+  { after: 18, kind: 'build', type: 'siege', x: 880, y: 600 },
+  { after: 18, kind: 'upgrade', x: 880, y: 600 },
+  { after: 18, kind: 'upgrade', x: 880, y: 600 },
+  { after: 19, kind: 'build', type: 'archer', x: 1070, y: 100 },
+  { after: 19, kind: 'upgrade', x: 1070, y: 100 },
+  { after: 19, kind: 'upgrade', x: 1070, y: 100 },
 ];
 const controlPending = [
   { after: 1, kind: 'upgrade', x: 350, y: 245 },
@@ -58,6 +86,34 @@ const controlPending = [
   { after: 9, kind: 'upgrade', x: 730, y: 620 },
   { after: 9, kind: 'upgrade', x: 860, y: 400 },
   { after: 9, kind: 'upgrade', x: 930, y: 360 },
+  { after: 10, kind: 'build', type: 'frost', x: 570, y: 300 },
+  { after: 10, kind: 'upgrade', x: 570, y: 300 },
+  { after: 10, kind: 'upgrade', x: 570, y: 300 },
+  { after: 11, kind: 'build', type: 'archer', x: 520, y: 620 },
+  { after: 11, kind: 'upgrade', x: 520, y: 620 },
+  { after: 11, kind: 'upgrade', x: 520, y: 620 },
+  { after: 12, kind: 'build', type: 'frost', x: 690, y: 430 },
+  { after: 12, kind: 'upgrade', x: 690, y: 430 },
+  { after: 12, kind: 'upgrade', x: 690, y: 430 },
+  { after: 13, kind: 'build', type: 'boost', x: 800, y: 640 },
+  { after: 13, kind: 'upgrade', x: 800, y: 640 },
+  { after: 14, kind: 'build', type: 'archer', x: 850, y: 170 },
+  { after: 14, kind: 'upgrade', x: 850, y: 170 },
+  { after: 14, kind: 'upgrade', x: 850, y: 170 },
+  { after: 15, kind: 'build', type: 'frost', x: 960, y: 170 },
+  { after: 15, kind: 'upgrade', x: 960, y: 170 },
+  { after: 15, kind: 'upgrade', x: 960, y: 170 },
+  { after: 16, kind: 'build', type: 'archer', x: 1030, y: 420 },
+  { after: 16, kind: 'upgrade', x: 1030, y: 420 },
+  { after: 16, kind: 'upgrade', x: 1030, y: 420 },
+  { after: 17, kind: 'build', type: 'frost', x: 1130, y: 500 },
+  { after: 17, kind: 'upgrade', x: 1130, y: 500 },
+  { after: 18, kind: 'build', type: 'archer', x: 880, y: 600 },
+  { after: 18, kind: 'upgrade', x: 880, y: 600 },
+  { after: 18, kind: 'upgrade', x: 880, y: 600 },
+  { after: 19, kind: 'build', type: 'frost', x: 1070, y: 100 },
+  { after: 19, kind: 'upgrade', x: 1070, y: 100 },
+  { after: 19, kind: 'upgrade', x: 1070, y: 100 },
 ];
 const strategy = process.env.TD_STRATEGY ?? 'balanced';
 const plans = {
@@ -104,6 +160,9 @@ await page.goto(url, { waitUntil: 'domcontentloaded' });
 await page.locator('#begin').click();
 await page.locator('canvas').waitFor({ state: 'visible', timeoutMs: 15_000 });
 await page.locator('#start-screen').waitFor({ state: 'hidden', timeoutMs: 15_000 });
+if (await page.locator('#tutorial-skip').isVisible()) await page.locator('#tutorial-skip').click();
+await page.locator('#zoom-out').click();
+await page.waitForTimeout(450);
 await page.locator('#speed').click();
 for (const [type, x, y] of plan.initial) await build(type, x, y);
 await worldClick(430, 285, { button: 'right' });

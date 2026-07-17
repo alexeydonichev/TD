@@ -105,3 +105,11 @@ export function scaleEnemy(definition: EnemyDefinition, difficulty: DifficultyDe
     reward: Math.max(1, Math.round(definition.reward * difficulty.enemyReward)),
   };
 }
+
+export function waveHpMultiplier(wave: number): number {
+  return 1 + Math.min(19, Math.max(0, Math.floor(wave) - 1)) * 0.025;
+}
+
+export function waveSpeedMultiplier(wave: number): number {
+  return 1 + Math.min(19, Math.max(0, Math.floor(wave) - 1)) * 0.008;
+}

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, isWaveComplete, loseLives,
   matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, upgrade,
+  waveHpMultiplier, waveSpeedMultiplier,
 } from './rules';
-import { DIFFICULTIES, ENEMIES } from './config';
+import { DIFFICULTIES, ENEMIES, WAVES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -72,6 +73,13 @@ describe('строительство и экономика', () => {
 });
 
 describe('состояние матча', () => {
+  it('содержит 20 волн и боссов на 7-й, 14-й и 20-й', () => {
+    expect(WAVES).toHaveLength(20);
+    const bossTypes = new Set(['warden', 'titan', 'boss']);
+    const bossWaves = WAVES.flatMap((wave, index) => wave.spawns.some((spawn) => bossTypes.has(spawn.type)) ? [index + 1] : []);
+    expect(bossWaves).toEqual([7, 14, 20]);
+  });
+
   it('завершает волну только после очистки очереди и карты', () => {
     expect(isWaveComplete(0, 0)).toBe(true);
     expect(isWaveComplete(1, 0)).toBe(false);
@@ -84,8 +92,8 @@ describe('состояние матча', () => {
   });
 
   it('определяет победу только после финальной очищенной волны', () => {
-    expect(matchResult({ wave: 10, finalWave: 10, queuedEnemies: 0, activeEnemies: 0, crystalLives: 1, ended: true })).toBe('victory');
-    expect(matchResult({ wave: 10, finalWave: 10, queuedEnemies: 0, activeEnemies: 1, crystalLives: 1, ended: true })).toBe('playing');
+    expect(matchResult({ wave: 20, finalWave: 20, queuedEnemies: 0, activeEnemies: 0, crystalLives: 1, ended: true })).toBe('victory');
+    expect(matchResult({ wave: 20, finalWave: 20, queuedEnemies: 0, activeEnemies: 1, crystalLives: 1, ended: true })).toBe('playing');
   });
 
   it('определяет поражение при разрушении Кристалла', () => {
@@ -110,6 +118,13 @@ describe('способности героя', () => {
 });
 
 describe('режимы сложности', () => {
+  it('плавно усиливает здоровье и скорость врагов к двадцатой волне', () => {
+    expect(waveHpMultiplier(1)).toBe(1);
+    expect(waveHpMultiplier(20)).toBeCloseTo(1.475);
+    expect(waveSpeedMultiplier(20)).toBeCloseTo(1.152);
+    expect(waveHpMultiplier(100)).toBeCloseTo(1.475);
+  });
+
   it('сюжетный режим ослабляет врага и повышает награду', () => {
     const scaled = scaleEnemy(ENEMIES.raider, DIFFICULTIES.story);
     expect(scaled.maxHp).toBeLessThan(ENEMIES.raider.maxHp);

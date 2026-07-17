@@ -44,6 +44,12 @@ button { font: inherit; color: inherit; }
 .speed-button { color: var(--gold); font-weight: 800; }
 .difficulty-badge { color: #d7b4ff; font-size: 8px; font-weight: 900; letter-spacing: .08em; border: 1px solid rgba(168,111,255,.35); background: rgba(109,61,157,.17); border-radius: 5px; padding: 6px 8px; white-space: nowrap; }
 
+.camera-controls { position: absolute; z-index: 74; top: 91px; right: 18px; display: flex; align-items: center; gap: 5px; padding: 5px; border-radius: 9px; }
+.camera-controls button { height: 32px; border: 1px solid rgba(255,255,255,.12); border-radius: 6px; background: rgba(255,255,255,.06); cursor: pointer; }
+.camera-controls .icon-button { min-width: 34px; font-size: 18px; }
+#zoom-reset { min-width: 58px; color: var(--cyan); font-size: 10px; font-weight: 900; }
+.camera-controls button:hover { background: rgba(116,223,242,.14); border-color: rgba(116,223,242,.35); }
+
 .wave-card { position: absolute; z-index: 70; top: 91px; left: 28px; width: 285px; padding: 14px 16px 15px; border-radius: 9px; border-left: 3px solid var(--purple); }
 .wave-card h2 { margin: 5px 0 2px; font-family: Georgia, serif; font-size: 18px; color: #f3d8ff; }
 .wave-card p { margin: 0 0 11px; color: #beb4c7; font-size: 12px; }
@@ -107,6 +113,7 @@ button { font: inherit; color: inherit; }
 
 .boss-bar { position: absolute; z-index: 72; top: 91px; left: 50%; transform: translateX(-50%); width: 500px; padding: 10px 14px; border-radius: 8px; border-color: rgba(255,70,159,.5); }
 .boss-bar > div:first-child { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; color: #ff9fcd; }
+#boss-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #boss-phase { color: #ffd18e; }
 #boss-shield { color: #a9efff; }
 .boss-bar .bar { margin-top: 7px; height: 16px; background: #180b16; border: 1px solid #7e2c5d; position: relative; overflow: hidden; }
@@ -161,6 +168,7 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
 @media (max-height: 760px) {
   .topbar { top: 7px; }
   .wave-card, .boss-bar { top: 76px; }
+  .camera-controls { top: 76px; }
   .tower-panel { top: 217px; }
   .build-panel, .hero-panel { bottom: 7px; }
 }

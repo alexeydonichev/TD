@@ -13,7 +13,7 @@ app.innerHTML = `
       <div class="brand"><span class="brand-mark">◆</span><div><small>ДОЛИНА</small><strong>РАЗЛОМА</strong></div></div>
       <div class="resource gold"><span>◈</span><div><small>ЗОЛОТО</small><b id="gold">0</b></div></div>
       <div class="resource lives"><span>♦</span><div><small>КРИСТАЛЛ</small><b id="lives">20</b></div></div>
-      <div class="resource"><span>☷</span><div><small>ВОЛНА</small><b><i id="wave">0</i>/10</b></div></div>
+      <div class="resource"><span>☷</span><div><small>ВОЛНА</small><b><i id="wave">0</i>/<i id="wave-total">20</i></b></div></div>
       <div class="resource"><span>⚔</span><div><small>ОСТАЛОСЬ</small><b id="remaining">0</b></div></div>
       <div class="resource score"><span>✦</span><div><small>СЧЁТ</small><b id="score">0</b></div></div>
       <div class="top-actions">
@@ -25,6 +25,12 @@ app.innerHTML = `
         <button id="speed" class="speed-button">×1</button>
       </div>
     </section>
+
+    <nav class="camera-controls glass" aria-label="Масштаб и камера">
+      <button id="zoom-out" class="icon-button" title="Отдалить карту" aria-label="Отдалить карту">−</button>
+      <button id="zoom-reset" title="Показать всю карту">108%</button>
+      <button id="zoom-in" class="icon-button" title="Приблизить карту" aria-label="Приблизить карту">+</button>
+    </nav>
 
     <aside class="wave-card glass">
       <div class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА</div>
@@ -62,14 +68,14 @@ app.innerHTML = `
       </div>
       <div class="abilities">
         ${abilityButton('q', 'Q', 'ϟ', HERO.abilities.q.name, HERO.abilities.q.mana)}
-        ${abilityButton('w', 'W', '➤', HERO.abilities.w.name, HERO.abilities.w.mana)}
+        ${abilityButton('w', '⇧', '➤', HERO.abilities.w.name, HERO.abilities.w.mana)}
         ${abilityButton('e', 'E', '◇', HERO.abilities.e.name, HERO.abilities.e.mana)}
         ${abilityButton('r', 'R', '☄', HERO.abilities.r.name, HERO.abilities.r.mana)}
       </div>
     </section>
 
     <section id="boss-bar" class="boss-bar glass hidden">
-      <div><strong>ВЛАДЫКА РАЗЛОМА</strong><span id="boss-phase">ФАЗА I</span><span id="boss-shield"></span></div>
+      <div><strong id="boss-name">ВЛАДЫКА РАЗЛОМА</strong><span id="boss-phase">ФАЗА I</span><span id="boss-shield"></span></div>
       <div class="bar"><i id="boss-fill"></i><b id="boss-value"></b></div>
     </section>
 
@@ -77,14 +83,14 @@ app.innerHTML = `
       <div class="start-rune">◆</div>
       <div class="eyebrow">ОРИГИНАЛЬНАЯ ФЭНТЕЗИ TOWER DEFENSE</div>
       <h1>Долина <span>Разлома</span></h1>
-      <p>Защитите Кристалл, проведите Стража Грозы через десять волн и сокрушите Владыку Разлома.</p>
+      <p>Защитите Кристалл в двадцати волнах и одолейте трёх владык Разлома.</p>
       <div class="difficulty-picker" role="radiogroup" aria-label="Сложность">
         ${difficultyButton('story')}
         ${difficultyButton('standard')}
         ${difficultyButton('rift')}
       </div>
       <button id="begin" class="start-button">НАЧАТЬ ИГРУ</button>
-      <div class="controls"><span>ПКМ · герой</span><span>1–4 · башни</span><span>Q/W/E/R · умения</span><span>Space · пауза</span></div>
+      <div class="controls"><span>WASD / ПКМ · герой</span><span>Колесо · масштаб</span><span>1–4 · башни</span><span>Q/Shift/E/R · умения</span></div>
     </div>
 
     <div id="end-screen" class="overlay hidden">
@@ -109,7 +115,7 @@ app.innerHTML = `
         <label><input id="large-text" type="checkbox"> Увеличенный текст HUD</label>
         <label><input id="reduce-motion" type="checkbox"> Уменьшить анимации</label>
         <label><input id="screen-shake" type="checkbox"> Встряска камеры</label>
-        <p><b>Клавиатура:</b> 1–4 башни · Q/W/E/R умения · Space пауза · F герой · Esc отмена.</p>
+        <p><b>Управление:</b> WASD — герой · ПКМ — идти к точке · Shift — рывок · Q/E/R — умения · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя.</p>
         <button id="close-settings" class="primary">Готово</button>
       </section>
     </div>
@@ -173,6 +179,9 @@ get<HTMLButtonElement>('begin').addEventListener('click', async () => {
 get<HTMLButtonElement>('start-wave').addEventListener('click', () => emit('td:action', { type: 'start-wave' }));
 get<HTMLButtonElement>('pause').addEventListener('click', () => emit('td:action', { type: 'pause' }));
 get<HTMLButtonElement>('speed').addEventListener('click', () => emit('td:action', { type: 'speed' }));
+get<HTMLButtonElement>('zoom-out').addEventListener('click', () => emit('td:action', { type: 'zoom', direction: 'out' }));
+get<HTMLButtonElement>('zoom-reset').addEventListener('click', () => emit('td:action', { type: 'zoom', direction: 'reset' }));
+get<HTMLButtonElement>('zoom-in').addEventListener('click', () => emit('td:action', { type: 'zoom', direction: 'in' }));
 get<HTMLButtonElement>('upgrade').addEventListener('click', () => emit('td:action', { type: 'upgrade' }));
 get<HTMLButtonElement>('sell').addEventListener('click', () => emit('td:action', { type: 'sell' }));
 get<HTMLButtonElement>('target-mode').addEventListener('click', () => emit('td:action', { type: 'target' }));
@@ -235,7 +244,7 @@ document.addEventListener('keydown', (event) => {
 const tutorialSteps = [
   ['Постройте первую башню', 'Нажмите 1–4 или выберите башню внизу, затем укажите свободное место рядом с маршрутом.', '.build-panel'],
   ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото.', '.wave-card'],
-  ['Переместите героя', 'Нажмите правой кнопкой на карте. Страж Грозы сам атакует врагов рядом.', '.hero-panel'],
+  ['Переместите героя', 'Ведите Стража клавишами WASD или укажите точку правой кнопкой. Shift выполняет рывок к курсору.', '.hero-panel'],
   ['Примените умение', 'Q поражает цепью целей, W совершает рывок, E усиливает защиту. R откроется на 3 уровне.', '.abilities'],
   ['Улучшите защиту', 'Выберите построенную башню и повысьте её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
 ] as const;
@@ -291,6 +300,7 @@ function renderHud(state: HudState): void {
   get('gold').textContent = String(state.gold);
   get('lives').textContent = String(state.lives);
   get('wave').textContent = String(state.wave);
+  get('wave-total').textContent = String(state.totalWaves);
   get('remaining').textContent = String(state.remaining);
   get('score').textContent = state.score.toLocaleString('ru-RU');
   get('difficulty-badge').textContent = state.difficultyName.toUpperCase();
@@ -303,6 +313,7 @@ function renderHud(state: HudState): void {
   get<HTMLButtonElement>('start-wave').innerHTML = state.waveActive ? 'Волна началась' : 'Начать досрочно <kbd>+золото</kbd>';
   get('pause').textContent = state.paused ? '▶' : 'Ⅱ';
   get('speed').textContent = `×${state.speed}`;
+  get('zoom-reset').textContent = `${Math.round(state.cameraZoom * 100)}%`;
   get('pause-label').classList.toggle('hidden', !state.paused);
   get('placement-message').textContent = state.placementMessage || 'Выберите башню';
   document.querySelectorAll<HTMLButtonElement>('[data-tower]').forEach((button) => button.classList.toggle('active', button.dataset.tower === state.buildType));
@@ -324,10 +335,14 @@ function renderHud(state: HudState): void {
 function strategyHint(wave: number): string {
   if (wave <= 2) return 'Стрелковые башни — надёжный первый рубеж.';
   if (wave <= 4) return 'Лёд контролирует быстрые группы, стрелки добивают лидера.';
-  if (wave <= 7) return 'Осадные залпы пробивают броню и плотные построения.';
-  if (wave === 8) return 'Воздух: нужны стрелковые или ледяные башни и герой.';
-  if (wave === 9) return 'Сочетайте урон по площади, замедление и усиление.';
-  return 'Сохраните ману для щита босса и второй фазы.';
+  if (wave <= 6) return 'Добавьте осадный урон и подготовьте ману к первому боссу.';
+  if (wave === 7) return 'БОСС I: переждите щит, герой должен перехватить призванную стаю.';
+  if (wave <= 10) return 'Усильте противовоздушную линию и перекройте второй поворот.';
+  if (wave <= 13) return 'Улучшайте башни до III уровня: число целей быстро растёт.';
+  if (wave === 14) return 'БОСС II: броню Титана лучше всего ломают осадные и магические атаки.';
+  if (wave <= 17) return 'Две линии контроля и башня усиления важнее одиночного урона.';
+  if (wave <= 19) return 'Элитные волны: держите героя у самого загруженного участка.';
+  return 'БОСС III: его прорыв уничтожит Кристалл. Сохраните Сердце бури для второй фазы.';
 }
 
 function renderTowerPanel(state: HudState): void {
@@ -370,6 +385,7 @@ function renderBoss(state: HudState): void {
   const panel = get('boss-bar');
   panel.classList.toggle('hidden', !state.boss);
   if (!state.boss) return;
+  get('boss-name').textContent = state.boss.name.toUpperCase();
   get('boss-phase').textContent = `ФАЗА ${state.boss.phase === 1 ? 'I' : 'II'}`;
   get('boss-shield').textContent = state.boss.shielded ? 'МАГИЧЕСКИЙ ЩИТ' : '';
   get<HTMLElement>('boss-fill').style.width = `${Math.max(0, state.boss.hp / state.boss.maxHp) * 100}%`;
@@ -384,7 +400,7 @@ function renderEnd(result: 'victory' | 'defeat'): void {
   get('end-kicker').textContent = victory ? 'КРИСТАЛЛ СПАСЁН' : 'КРИСТАЛЛ РАЗРУШЕН';
   get('end-title').textContent = victory ? 'Разлом запечатан' : 'Долина пала';
   get('end-copy').textContent = victory
-    ? `Все 10 волн отражены. Счёт: ${latestState?.score.toLocaleString('ru-RU') ?? 0}.`
+    ? `Все 20 волн и три босса повержены. Счёт: ${latestState?.score.toLocaleString('ru-RU') ?? 0}.`
     : `Вы продержались до волны ${latestState?.wave ?? 0}. Измените расстановку и попробуйте снова.`;
   get('end-rune').textContent = victory ? '◆' : '◇';
   get('announcer').textContent = victory ? 'Победа. Разлом запечатан.' : 'Поражение. Кристалл разрушен.';

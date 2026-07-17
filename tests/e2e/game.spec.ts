@@ -13,6 +13,18 @@ test('полный ускоренный матч: башня, способнос
 
   const canvas = page.locator('canvas');
   await expect(canvas).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
+  const heroBefore = await page.evaluate(() => window.__TD_TEST__?.state().hero);
+  await page.keyboard.down('KeyA');
+  await page.waitForTimeout(250);
+  await page.keyboard.up('KeyA');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.x ?? 9999)).toBeLessThan(heroBefore!.x);
+  const zoomBefore = await page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 1);
+  await page.locator('#zoom-in').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 1)).toBeGreaterThan(zoomBefore);
+  await page.locator('#zoom-reset').click();
+  await expect(page.locator('#zoom-reset')).toContainText('%');
+  await page.screenshot({ path: 'test-results/landscape-v3.png', fullPage: true });
   await page.locator('[data-tower="archer"]').click();
   const box = await canvas.boundingBox();
   if (!box) throw new Error('Canvas has no bounding box');
@@ -46,12 +58,16 @@ test('полный ускоренный матч: башня, способнос
   await expect(page.locator('#tower-level')).toHaveText('2');
 
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().wave ?? 0), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
-  await page.evaluate(() => window.__TD_TEST__?.skipToBoss());
+  for (const [tier, name] of [[1, 'СТРАЖ БЕЗДНЫ'], [2, 'ТИТАН ОСКОЛКОВ'], [3, 'ВЛАДЫКА РАЗЛОМА']] as const) {
+    await page.evaluate((bossTier) => window.__TD_TEST__?.skipToBoss(bossTier), tier);
+    await expect(page.locator('#boss-bar')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#boss-name')).toHaveText(name, { timeout: 10_000 });
+  }
 
-  await expect(page.locator('#boss-bar')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('#end-screen')).toBeVisible({ timeout: 25_000 });
   await expect(page.locator('#end-title')).toHaveText('Разлом запечатан');
-  await expect(page.locator('#wave')).toHaveText('10');
+  await expect(page.locator('#boss-name')).toHaveText('ВЛАДЫКА РАЗЛОМА');
+  await expect(page.locator('#wave')).toHaveText('20');
   expect(consoleErrors).toEqual([]);
 });
 
