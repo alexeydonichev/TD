@@ -11,7 +11,7 @@
 
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; }
-body { min-width: 1180px; min-height: 680px; background: radial-gradient(circle at 50% 0%, #231630, #080710 68%); }
+body { min-width: 0; min-height: 0; background: radial-gradient(circle at 50% 0%, #231630, #080710 68%); }
 button { font: inherit; color: inherit; }
 
 .game-shell { position: relative; width: 100vw; height: 100vh; overflow: hidden; isolation: isolate; }
@@ -164,6 +164,57 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
 .large-text .topbar, .large-text .build-panel, .large-text .hero-panel { font-size: 115%; }
 .large-text .wave-card, .large-text .tower-panel { transform: scale(1.08); transform-origin: top left; }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+
+@media (max-width: 1180px) {
+  .topbar { top: 8px; width: calc(100vw - 16px); height: 56px; }
+  .brand { gap: 6px; padding: 0 10px; }
+  .brand-mark { font-size: 23px; }
+  .brand small { font-size: 8px; }
+  .brand strong { font-size: 13px; }
+  .resource { min-width: 0; flex: 1 1 76px; gap: 5px; padding: 0 5px; }
+  .resource.score { min-width: 0; }
+  .resource > span { display: none; }
+  .resource small { font-size: 7px; }
+  .resource b { font-size: 15px; }
+  .top-actions { flex: 0 0 auto; gap: 4px; padding: 0 6px; }
+  .top-actions .icon-button, .top-actions .speed-button { min-width: 32px; width: 32px; height: 32px; }
+  .difficulty-badge { max-width: 72px; padding: 5px 6px; overflow: hidden; text-overflow: ellipsis; }
+
+  .wave-card { top: 72px; left: 8px; width: 260px; padding: 12px 13px; }
+  .wave-card h2 { font-size: 16px; }
+  .camera-controls { top: 72px; right: 8px; }
+  .boss-bar { top: 72px; width: min(500px, calc(100vw - 580px)); min-width: 300px; }
+  .tower-panel { top: 213px; left: 8px; width: 260px; padding: 12px 13px; }
+  .tutorial { top: 120px; right: 8px; width: 300px; }
+
+  .build-panel { bottom: 8px; left: 8px; gap: 0; padding: 6px; }
+  .build-label { display: none; }
+  .build-buttons { gap: 4px; }
+  .build-button { width: 56px; height: 56px; justify-content: center; padding: 5px; }
+  .build-button > i { width: 40px; height: 40px; flex-basis: 40px; }
+  .build-button > span { display: none; }
+
+  .hero-panel { right: 8px; bottom: 8px; height: 68px; gap: 6px; padding: 6px; }
+  .hero-portrait { width: 46px; height: 46px; }
+  .hero-vitals { width: 134px; }
+  .hero-title { font-size: 10px; }
+  .hero-title small { display: none; }
+  .abilities { gap: 4px; }
+  .ability { width: 44px; height: 48px; }
+  .ability > i { font-size: 19px; }
+
+  .difficulty-picker { width: min(680px, calc(100vw - 32px)); }
+  .controls { gap: 14px; }
+  .settings-dialog > section { width: min(430px, calc(100vw - 32px)); }
+}
+
+@media (max-width: 820px) {
+  .brand { display: none; }
+  .resource { flex-basis: 68px; }
+  .resource.score { display: none; }
+  .difficulty-badge { display: none; }
+  .controls { flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); }
+}
 
 @media (max-height: 760px) {
   .topbar { top: 7px; }

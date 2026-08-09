@@ -113,3 +113,42 @@ test('профиль держит 100 активных противников б
   expect(metrics!.gameObjects).toBeLessThan(500);
   expect(metrics!.fps).toBeGreaterThanOrEqual(30);
 });
+
+test('компактный HUD остаётся доступным в узком и квадратном окне', async ({ page }) => {
+  const assertHudFits = async (width: number, height: number) => {
+    await page.setViewportSize({ width, height });
+    await expect.poll(() => page.evaluate(() => {
+      const topbar = document.querySelector<HTMLElement>('.topbar');
+      return {
+        documentFits: document.documentElement.scrollWidth <= window.innerWidth,
+        topbarFits: Boolean(topbar && topbar.scrollWidth <= topbar.clientWidth),
+      };
+    })).toEqual({ documentFits: true, topbarFits: true });
+
+    const panels = await Promise.all(['.build-panel', '.hero-panel', '.wave-card', '.camera-controls'].map(async (selector) => {
+      const box = await page.locator(selector).boundingBox();
+      if (!box) throw new Error(`${selector} has no bounding box`);
+      return { selector, ...box };
+    }));
+    for (const panel of panels) {
+      expect(panel.x, `${panel.selector} выходит слева`).toBeGreaterThanOrEqual(0);
+      expect(panel.x + panel.width, `${panel.selector} выходит справа`).toBeLessThanOrEqual(width);
+      expect(panel.y, `${panel.selector} выходит сверху`).toBeGreaterThanOrEqual(0);
+      expect(panel.y + panel.height, `${panel.selector} выходит снизу`).toBeLessThanOrEqual(height);
+    }
+    const build = panels[0];
+    const hero = panels[1];
+    expect(build.x + build.width, 'нижние панели перекрываются').toBeLessThanOrEqual(hero.x);
+  };
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await assertHudFits(1024, 768);
+  await assertHudFits(900, 900);
+  await expect(page.getByRole('button', { name: /Начать досрочно/ })).toBeInViewport();
+  await expect(page.locator('[data-ability="q"]')).toBeInViewport();
+  await expect(page.locator('[data-tower="archer"]')).toBeInViewport();
+  await page.screenshot({ path: 'test-results/compact-hud-900x900.png', fullPage: true });
+});
