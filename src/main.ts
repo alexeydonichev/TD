@@ -1,5 +1,6 @@
 import './style.css';
-import { DIFFICULTIES, GAME_HEIGHT, GAME_WIDTH, HERO, TOWERS } from './core/config';
+import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, TOWERS, WAVES } from './core/config';
+import { earlyStartBonus, waveRoster } from './core/rules';
 import type { Difficulty, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
 import { emit, on } from './game/bus';
@@ -33,9 +34,11 @@ app.innerHTML = `
     </nav>
 
     <aside class="wave-card glass">
-      <div class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА</div>
+      <div id="wave-kicker" class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА</div>
       <h2 id="wave-title">Разведчики Разлома</h2>
       <p id="wave-intel">Налётчики · наземные</p>
+      <div id="wave-roster" class="wave-roster" role="list" aria-label="Состав следующей волны"></div>
+      <div class="wave-economy"><span id="wave-size"></span><span id="wave-reward"></span></div>
       <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
       <div class="wave-row"><span id="countdown">00:12</span><button id="start-wave" class="primary">Начать досрочно <kbd>+золото</kbd></button></div>
     </aside>
@@ -148,6 +151,7 @@ let gameLoad: Promise<void> | null = null;
 let selectedDifficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
 const isTestMode = new URLSearchParams(window.location.search).get('test') === '1';
 let lastAnnouncedWave = -1;
+let lastBriefedWave = -1;
 
 async function ensureGame(): Promise<void> {
   if (gameLoad) return gameLoad;
@@ -307,10 +311,12 @@ function renderHud(state: HudState): void {
   get('wave-title').textContent = state.waveTitle;
   get('wave-intel').textContent = state.waveIntel;
   const hintedWave = Math.max(1, state.waveActive ? state.wave : state.wave + 1);
+  renderWaveBriefing(hintedWave, state.waveActive);
   get('strategy-hint').textContent = strategyHint(hintedWave);
   get('countdown').textContent = state.waveActive ? 'ИДЁТ ВОЛНА' : `00:${Math.ceil(state.countdown).toString().padStart(2, '0')}`;
   get<HTMLButtonElement>('start-wave').disabled = state.waveActive || state.wave >= state.totalWaves || state.result !== 'playing';
-  get<HTMLButtonElement>('start-wave').innerHTML = state.waveActive ? 'Волна началась' : 'Начать досрочно <kbd>+золото</kbd>';
+  const bonus = earlyStartBonus(state.countdown, EARLY_START_GOLD_PER_SECOND);
+  get<HTMLButtonElement>('start-wave').innerHTML = state.waveActive ? 'Волна в бою' : `Начать досрочно <kbd>+◈ ${bonus}</kbd>`;
   get('pause').textContent = state.paused ? '▶' : 'Ⅱ';
   get('speed').textContent = `×${state.speed}`;
   get('zoom-reset').textContent = `${Math.round(state.cameraZoom * 100)}%`;
@@ -330,6 +336,34 @@ function renderHud(state: HudState): void {
   const usedAbility = Object.values(state.hero.abilities).some((ability) => ability.cooldown > 0);
   if (tutorialStep === 3 && usedAbility) showTutorial(4);
   if (tutorialStep === 4 && (state.selectedTower?.level ?? 0) > 1) showTutorial(-1);
+}
+
+function renderWaveBriefing(waveNumber: number, active: boolean): void {
+  get('wave-kicker').textContent = active ? 'ВОЛНА В БОЮ' : 'СЛЕДУЮЩАЯ УГРОЗА';
+  const wave = WAVES[Math.min(WAVES.length - 1, Math.max(0, waveNumber - 1))];
+  if (!wave || lastBriefedWave === waveNumber) return;
+  lastBriefedWave = waveNumber;
+  const roster = waveRoster(wave.spawns);
+  const total = roster.reduce((sum, entry) => sum + entry.count, 0);
+  const rosterElement = get('wave-roster');
+  rosterElement.innerHTML = roster.map(({ type, count }) => {
+    const enemy = ENEMIES[type];
+    const boss = type === 'warden' || type === 'titan' || type === 'boss';
+    const trait = boss ? 'босс' : enemy.flying ? 'воздух' : enemy.armor >= 20 ? 'броня' : 'земля';
+    return `<span class="enemy-chip${boss ? ' boss' : ''}" data-enemy="${type}" role="listitem" title="${enemy.name}: ${trait}"><i aria-hidden="true"></i><b>${enemy.name}</b><em>×${count}</em></span>`;
+  }).join('');
+  rosterElement.setAttribute('aria-label', `Состав волны ${waveNumber}: ${roster.map(({ type, count }) => `${ENEMIES[type].name}, ${count}`).join('; ')}`);
+  get('wave-size').textContent = `${total} ${enemyCountLabel(total)}`;
+  get('wave-reward').textContent = `Зачистка +◈ ${wave.reward}`;
+}
+
+function enemyCountLabel(count: number): string {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'врагов';
+  if (mod10 === 1) return 'враг';
+  if (mod10 >= 2 && mod10 <= 4) return 'врага';
+  return 'врагов';
 }
 
 function strategyHint(wave: number): string {

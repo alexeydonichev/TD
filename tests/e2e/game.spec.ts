@@ -100,6 +100,41 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('#settings-dialog')).toBeHidden();
 });
 
+test('тактический брифинг показывает состав, награду и статус волны', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+
+  await expect(page.locator('#wave-kicker')).toHaveText('СЛЕДУЮЩАЯ УГРОЗА');
+  await expect(page.locator('#wave-roster .enemy-chip')).toHaveCount(1);
+  await expect(page.locator('#wave-roster .enemy-chip')).toContainText('Налётчик');
+  await expect(page.locator('#wave-roster .enemy-chip')).toContainText('×8');
+  await expect(page.locator('#wave-size')).toHaveText('8 врагов');
+  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 35');
+  await expect(page.locator('#start-wave')).toContainText(/\+◈ \d+/);
+
+  await page.locator('[data-tower="archer"]').click();
+  const canvasBox = await page.locator('canvas').boundingBox();
+  if (!canvasBox) throw new Error('Canvas has no bounding box');
+  await page.mouse.click(canvasBox.x + canvasBox.width * (360 / 1200), canvasBox.y + canvasBox.height * (250 / 700));
+  await expect(page.locator('#tower-panel')).toBeVisible();
+  const waveBox = await page.locator('.wave-card').boundingBox();
+  const towerBox = await page.locator('#tower-panel').boundingBox();
+  expect(waveBox && towerBox && waveBox.y + waveBox.height <= towerBox.y, 'брифинг перекрывает панель башни').toBe(true);
+
+  await page.locator('#start-wave').click();
+  await expect(page.locator('#wave-kicker')).toHaveText('ВОЛНА В БОЮ');
+  await expect(page.locator('#start-wave')).toHaveText('Волна в бою');
+
+  await page.evaluate(() => window.__TD_TEST__?.skipToBoss(3));
+  await expect(page.locator('#wave-title')).toHaveText('Владыка Разлома');
+  await expect(page.locator('#wave-roster .enemy-chip')).toHaveCount(4);
+  await expect(page.locator('#wave-roster')).toContainText('Владыка Разлома×1');
+  await expect(page.locator('#wave-size')).toHaveText('45 врагов');
+  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 320');
+  await page.screenshot({ path: 'test-results/tactical-briefing.png', fullPage: true });
+});
+
 test('профиль держит 100 активных противников без утечки объектов', async ({ page }) => {
   await page.goto('/?test=1');
   await page.locator('#begin').click();

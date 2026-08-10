@@ -1,4 +1,4 @@
-import type { DifficultyDefinition, EnemyDefinition, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot } from './types';
+import type { DifficultyDefinition, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, WaveSpawn } from './types';
 
 export type PlacementFailure = 'outside' | 'path' | 'crystal' | 'forbidden' | 'occupied' | 'gold';
 
@@ -62,6 +62,18 @@ export function sellValue(baseCost: number, paidUpgrades: number[]): number {
 
 export function awardGold(gold: number, enemyReward = 0, waveReward = 0, earlyBonus = 0): number {
   return gold + Math.max(0, enemyReward) + Math.max(0, waveReward) + Math.max(0, earlyBonus);
+}
+
+export function earlyStartBonus(seconds: number, goldPerSecond: number): number {
+  return Math.floor(Math.max(0, seconds) * Math.max(0, goldPerSecond));
+}
+
+export function waveRoster(spawns: WaveSpawn[]): Array<{ type: EnemyType; count: number }> {
+  const counts = new Map<EnemyType, number>();
+  for (const spawn of spawns) {
+    counts.set(spawn.type, (counts.get(spawn.type) ?? 0) + Math.max(0, Math.floor(spawn.count)));
+  }
+  return [...counts].filter(([, count]) => count > 0).map(([type, count]) => ({ type, count }));
 }
 
 export function loseLives(lives: number, damage: number): number {

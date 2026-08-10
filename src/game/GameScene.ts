@@ -4,7 +4,7 @@ import {
   INTERMISSION_SECONDS, PATH, TOWERS, WAVES,
 } from '../core/config';
 import {
-  applyArmor, applySlow, chainTargets, distance, loseLives, placementFailure, pointToLineDistance, scaleEnemy,
+  applyArmor, applySlow, chainTargets, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy,
   selectTarget, sellValue, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
 import type { Difficulty, EnemyType, Point, TargetMode, TowerType } from '../core/types';
@@ -517,7 +517,7 @@ export class GameScene extends Phaser.Scene {
 
   private startNextWave(early: boolean): void {
     if (!this.started || this.waveActive || this.result !== 'playing' || this.currentWave >= WAVES.length) return;
-    if (early) this.gold += Math.floor(Math.max(0, this.countdown) * EARLY_START_GOLD_PER_SECOND);
+    if (early) this.gold += earlyStartBonus(this.countdown, EARLY_START_GOLD_PER_SECOND);
     if (early) this.score += Math.floor(Math.max(0, this.countdown) * 25 * DIFFICULTIES[this.difficulty].scoreMultiplier);
     this.currentWave += 1;
     this.waveActive = true;

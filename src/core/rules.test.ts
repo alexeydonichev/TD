@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, isWaveComplete, loseLives,
+  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, earlyStartBonus, isWaveComplete, loseLives,
   matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, upgrade,
-  waveHpMultiplier, waveSpeedMultiplier,
+  waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
 import { DIFFICULTIES, ENEMIES, WAVES } from './config';
 import type { PlacementContext } from './types';
@@ -69,6 +69,20 @@ describe('строительство и экономика', () => {
 
   it('начисляет золото за врага, волну и ранний старт', () => {
     expect(awardGold(100, 16, 35, 12)).toBe(163);
+  });
+
+  it('округляет бонус раннего старта так же для HUD и экономики', () => {
+    expect(earlyStartBonus(11.9, 2)).toBe(23);
+    expect(earlyStartBonus(-4, 2)).toBe(0);
+    expect(earlyStartBonus(10, -2)).toBe(0);
+  });
+
+  it('объединяет повторяющиеся группы в брифинге волны', () => {
+    expect(waveRoster([
+      { type: 'raider', count: 3, gapMs: 500 },
+      { type: 'runner', count: 2, gapMs: 300 },
+      { type: 'raider', count: 4, gapMs: 400 },
+    ])).toEqual([{ type: 'raider', count: 7 }, { type: 'runner', count: 2 }]);
   });
 });
 
