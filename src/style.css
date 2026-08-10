@@ -16,7 +16,8 @@ button { font: inherit; color: inherit; }
 
 .game-shell { position: relative; width: 100vw; height: 100vh; overflow: hidden; isolation: isolate; }
 .game-canvas { position: absolute; inset: 0; background: #111522; }
-.game-canvas canvas { display: block !important; }
+.game-canvas canvas { display: block !important; filter: saturate(1.06) contrast(1.035); }
+.game-shell::after { content: ''; position: absolute; z-index: 60; inset: 0; pointer-events: none; box-shadow: inset 0 0 95px rgba(3,5,12,.5), inset 0 -52px 70px rgba(3,5,12,.2); }
 .glass { background: linear-gradient(135deg, rgba(24, 23, 38, .94), rgba(10, 11, 20, .91)); border: 1px solid rgba(248, 220, 158, .18); box-shadow: 0 12px 40px rgba(0, 0, 0, .35), inset 0 1px rgba(255, 255, 255, .05); backdrop-filter: blur(8px); }
 .hidden { display: none !important; }
 .eyebrow { color: #aa9eb6; font-size: 10px; letter-spacing: .18em; font-weight: 800; }
@@ -115,7 +116,7 @@ button { font: inherit; color: inherit; }
 .hero-panel { position: absolute; z-index: 76; bottom: 16px; right: 18px; height: 82px; padding: 9px 11px; border-radius: 10px; display: flex; gap: 10px; align-items: center; }
 .hero-portrait { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; position: relative; font-size: 0; background-color: #102633; background-image: url('/assets/units-atlas.png'); background-size: 300% 200%; background-position: 100% 100%; background-repeat: no-repeat; border: 2px solid #83e6ef; box-shadow: 0 0 18px rgba(77,213,235,.25); }
 .hero-portrait span { position: absolute; bottom: -4px; right: -3px; width: 22px; height: 22px; display: grid; place-items: center; background: #e3b54e; color: #261a12; border-radius: 50%; font-size: 11px; font-weight: 900; }
-.hero-vitals { width: 166px; }
+.hero-vitals { width: 156px; }
 .hero-title { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
 .hero-title small { color: #65dbe9; font-size: 8px; text-transform: uppercase; }
 .vital { position: relative; margin-top: 4px; }
@@ -126,13 +127,17 @@ button { font: inherit; color: inherit; }
 .vital.hp i { background: linear-gradient(90deg, #8f243b, #ef5368); }
 .vital.mana i { background: linear-gradient(90deg, #28668d, #55c5e9); }
 .vital.xp i { background: linear-gradient(90deg, #88662a, #f1c24c); }
-.hero-tactics { width: 66px; align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
-#hero-stance { position: relative; min-height: 34px; padding: 5px 4px 4px; border: 1px solid rgba(116,223,242,.35); border-radius: 6px; background: rgba(42,105,119,.13); cursor: pointer; }
-#hero-stance kbd { position: absolute; top: 2px; left: 3px; color: #f5dc9b; font-size: 7px; }
-#hero-stance b { color: #9cefff; font-size: 8px; letter-spacing: .07em; }
+.hero-tactics { width: 76px; align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+.hero-tactic-buttons { display: flex; gap: 3px; }
+#hero-stance, #hero-stop { position: relative; width: 37px; min-height: 34px; padding: 7px 2px 3px; border: 1px solid rgba(116,223,242,.35); border-radius: 6px; background: rgba(42,105,119,.13); cursor: pointer; }
+#hero-stance kbd, #hero-stop kbd { position: absolute; top: 2px; left: 3px; color: #f5dc9b; font-size: 7px; }
+#hero-stance b, #hero-stop b { color: #9cefff; font-size: 7px; letter-spacing: .04em; }
 #hero-stance.pursuit { border-color: rgba(255,193,94,.6); background: rgba(151,92,35,.2); }
 #hero-stance.pursuit b { color: #ffd477; }
-#hero-focus { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #787382; font-size: 7px; font-weight: 900; text-align: center; letter-spacing: .03em; }
+#hero-stop { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.035); }
+#hero-stop:hover { border-color: rgba(255,110,126,.6); background: rgba(121,43,55,.22); }
+#hero-stop b { color: #c0b8c6; }
+#hero-focus { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #787382; font-size: 6px; font-weight: 900; text-align: center; letter-spacing: .02em; }
 #hero-focus.active { color: #ffd477; }
 .abilities { display: flex; gap: 6px; }
 .ability { width: 56px; height: 58px; position: relative; border: 1px solid #5f7184; border-radius: 7px; background: radial-gradient(circle at 50% 35%, #31697c, #17212d 70%); cursor: pointer; }
@@ -141,6 +146,8 @@ button { font: inherit; color: inherit; }
 .ability > small { position: absolute; right: 4px; bottom: 3px; color: #75dff0; font-size: 8px; }
 .ability .cooldown { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8,7,14,.72); border-radius: 6px; font-size: 12px; font-weight: 900; }
 .ability:not(.cooling):not(.locked) .cooldown { display: none; }
+.ability.aiming { border-color: #f6d372; box-shadow: 0 0 18px rgba(111,224,244,.45), inset 0 0 18px rgba(111,224,244,.2); transform: translateY(-2px); }
+.ability.aiming .cooldown { display: grid !important; color: #ffdf83; background: rgba(19,34,45,.68); font-size: 9px; letter-spacing: .06em; }
 .ability:disabled { cursor: not-allowed; filter: grayscale(.7); opacity: .7; }
 
 .boss-bar { position: absolute; z-index: 72; top: 91px; left: 50%; transform: translateX(-50%); width: 500px; padding: 10px 14px; border-radius: 8px; border-color: rgba(255,70,159,.5); }
@@ -232,12 +239,12 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
 
   .hero-panel { right: 8px; bottom: 8px; height: 68px; gap: 6px; padding: 6px; }
   .hero-portrait { width: 46px; height: 46px; }
-  .hero-vitals { width: 134px; }
+  .hero-vitals { width: 126px; }
   .hero-title { font-size: 10px; }
   .hero-title small { display: none; }
-  .hero-tactics { width: 58px; gap: 3px; }
-  #hero-stance { min-height: 30px; }
-  #hero-focus { max-width: 58px; font-size: 6px; }
+  .hero-tactics { width: 68px; gap: 3px; }
+  #hero-stance, #hero-stop { width: 33px; min-height: 30px; }
+  #hero-focus { max-width: 68px; font-size: 6px; }
   .abilities { gap: 4px; }
   .ability { width: 44px; height: 48px; }
   .ability > i { font-size: 19px; }

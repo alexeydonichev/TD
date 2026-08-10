@@ -80,7 +80,10 @@ app.innerHTML = `
         ${bar('xp', 'ОПЫТ')}
       </div>
       <div class="hero-tactics">
-        <button id="hero-stance" title="Сменить поведение героя" aria-label="Сменить режим героя"><kbd>C</kbd><b>ОХРАНА</b></button>
+        <div class="hero-tactic-buttons">
+          <button id="hero-stance" title="Сменить поведение героя" aria-label="Сменить режим героя"><kbd>C</kbd><b>ОХРАНА</b></button>
+          <button id="hero-stop" title="Остановиться и держать позицию" aria-label="Остановить героя"><kbd>X</kbd><b>СТОП</b></button>
+        </div>
         <small id="hero-focus">АВТОЦЕЛЬ</small>
       </div>
       <div class="abilities">
@@ -107,7 +110,7 @@ app.innerHTML = `
         ${difficultyButton('rift')}
       </div>
       <button id="begin" class="start-button">НАЧАТЬ ИГРУ</button>
-      <div class="controls"><span>WASD · точное движение</span><span>ПКМ · идти / фокус</span><span>C · охрана / погоня</span><span>Shift · рывок</span></div>
+      <div class="controls"><span>WASD · точное движение</span><span>ПКМ · идти / фокус</span><span>C / X · режим / стоп</span><span>R + ЛКМ · выбрать зону</span></div>
     </div>
 
     <div id="end-screen" class="overlay hidden">
@@ -132,7 +135,8 @@ app.innerHTML = `
         <label><input id="large-text" type="checkbox"> Увеличенный текст HUD</label>
         <label><input id="reduce-motion" type="checkbox"> Уменьшить анимации</label>
         <label><input id="screen-shake" type="checkbox"> Встряска камеры</label>
-        <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · Shift — рывок по WASD, к фокусу или курсору · Q предпочитает фокус · E/R — умения.</p>
+        <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · X — остановиться и держать позицию · Shift — рывок по WASD, к фокусу или курсору · Q предпочитает фокус · E — защита.</p>
+        <p><b>Прицеливание:</b> R включает предпросмотр «Сердца бури» · ЛКМ по карте — применить · ПКМ, Esc или повторное R — отменить без траты маны.</p>
         <p><b>Карта:</b> 1–4 — башни · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя · пробел — пауза.</p>
         <button id="close-settings" class="primary">Готово</button>
       </section>
@@ -205,6 +209,7 @@ get<HTMLButtonElement>('upgrade').addEventListener('click', () => emit('td:actio
 get<HTMLButtonElement>('sell').addEventListener('click', () => emit('td:action', { type: 'sell' }));
 get<HTMLButtonElement>('target-mode').addEventListener('click', () => emit('td:action', { type: 'target' }));
 get<HTMLButtonElement>('hero-stance').addEventListener('click', () => emit('td:action', { type: 'hero-stance' }));
+get<HTMLButtonElement>('hero-stop').addEventListener('click', () => emit('td:action', { type: 'hero-stop' }));
 get<HTMLButtonElement>('restart').addEventListener('click', () => window.location.reload());
 document.querySelectorAll<HTMLButtonElement>('[data-tower]').forEach((button) => button.addEventListener('click', () => emit('td:action', { type: 'build', tower: button.dataset.tower as TowerType })));
 document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => button.addEventListener('click', () => emit('td:action', { type: 'ability', key: button.dataset.ability })));
@@ -264,8 +269,8 @@ document.addEventListener('keydown', (event) => {
 const tutorialSteps = [
   ['Постройте первую башню', 'Нажмите 1–4 или выберите башню внизу, затем укажите свободное место рядом с маршрутом.', '.build-panel'],
   ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото с учётом выбранной сложности.', '.wave-card'],
-  ['Возьмите цель под контроль', 'ПКМ по земле отправляет героя в точку, ПКМ по врагу ставит фокус. C переключает безопасную «Охрану» и автоматическую «Погоню».', '.hero-panel'],
-  ['Примените умение', 'Q начинает цепь с фокус-цели. Shift идёт по направлению WASD, затем к фокусу и только потом к курсору. E защищает башни, R откроется на 3 уровне.', '.abilities'],
+  ['Возьмите цель под контроль', 'ПКМ по земле отправляет героя в точку, ПКМ по врагу ставит фокус. C переключает «Охрану/Погоню», X немедленно останавливает героя.', '.hero-panel'],
+  ['Примените умение', 'Q начинает цепь с фокус-цели. Shift идёт по WASD, затем к фокусу и курсору. R показывает зону бури до подтверждения ЛКМ.', '.abilities'],
   ['Улучшите защиту', 'Выберите построенную башню и повысьте её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
 ] as const;
 let tutorialStep = -1;
@@ -427,7 +432,8 @@ function renderTowerPanel(state: HudState): void {
 function renderHero(state: HudState): void {
   const hero = state.hero;
   get('hero-level').textContent = String(hero.level);
-  get('hero-status').textContent = hero.alive ? 'в бою' : `возрождение ${Math.ceil(hero.respawn)}с`;
+  const commandLabels = { hold: 'позиция', move: 'к точке', focus: 'фокус', pursuit: 'погоня', aim: 'выбор зоны' } as const;
+  get('hero-status').textContent = hero.alive ? commandLabels[hero.command] : `возрождение ${Math.ceil(hero.respawn)}с`;
   const stance = get<HTMLButtonElement>('hero-stance');
   stance.classList.toggle('pursuit', hero.stance === 'pursuit');
   stance.querySelector('b')!.textContent = hero.stance === 'pursuit' ? 'ПОГОНЯ' : 'ОХРАНА';
@@ -441,8 +447,9 @@ function renderHero(state: HudState): void {
     const cooldown = button.querySelector<HTMLElement>('.cooldown')!;
     button.classList.toggle('locked', ability.locked);
     button.classList.toggle('cooling', ability.cooldown > 0);
+    button.classList.toggle('aiming', hero.aimAbility === key);
     button.disabled = ability.locked || ability.cooldown > 0 || hero.mana < ability.mana || !hero.alive;
-    cooldown.textContent = ability.locked ? 'УР. 3' : ability.cooldown > 0 ? ability.cooldown.toFixed(1) : '';
+    cooldown.textContent = hero.aimAbility === key ? 'ЦЕЛЬ' : ability.locked ? 'УР. 3' : ability.cooldown > 0 ? ability.cooldown.toFixed(1) : '';
   });
 }
 

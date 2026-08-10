@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, earlyStartBonus, isWaveComplete, loseLives,
+  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, earlyStartBonus, isWaveComplete, loseLives,
   matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, upgrade,
   waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
@@ -122,6 +122,13 @@ describe('состояние матча', () => {
 });
 
 describe('способности героя', () => {
+  it('направляет рывок по приоритету WASD, фокус, курсор', () => {
+    const origin = { x: 100, y: 100 };
+    expect(dashDestination(origin, { x: -1, y: 0 }, { x: 500, y: 500 }, { x: 400, y: 100 }, 270)).toEqual({ x: -170, y: 100 });
+    expect(dashDestination(origin, { x: 0, y: 0 }, { x: 200, y: 100 }, { x: 500, y: 100 }, 270)).toEqual({ x: 200, y: 100 });
+    expect(dashDestination(origin, { x: 0, y: 0 }, null, { x: 500, y: 100 }, 270)).toEqual({ x: 370, y: 100 });
+  });
+
   it('цепная молния не повторяет цели и соблюдает дальность прыжка', () => {
     const targets = [
       { id: 1, x: 40, y: 0, hp: 10, maxHp: 10, progress: 0, flying: false, alive: true },

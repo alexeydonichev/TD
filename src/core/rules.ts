@@ -116,6 +116,19 @@ export function pointToLineDistance(point: Point, from: Point, to: Point): numbe
   return pointSegmentDistance(point, from, to);
 }
 
+export function dashDestination(origin: Point, input: Point, focus: Point | null, pointer: Point, maxDistance: number): Point {
+  const inputLength = Math.hypot(input.x, input.y);
+  const target = inputLength > 0
+    ? { x: origin.x + input.x / inputLength * maxDistance, y: origin.y + input.y / inputLength * maxDistance }
+    : focus ?? pointer;
+  const targetDistance = distance(origin, target);
+  if (targetDistance <= maxDistance || targetDistance === 0) return { ...target };
+  return {
+    x: origin.x + (target.x - origin.x) / targetDistance * maxDistance,
+    y: origin.y + (target.y - origin.y) / targetDistance * maxDistance,
+  };
+}
+
 export function scaleEnemy(definition: EnemyDefinition, difficulty: DifficultyDefinition): EnemyDefinition {
   return {
     ...definition,

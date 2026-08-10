@@ -153,9 +153,27 @@ test('герой держит фокус, преследует цель и на�
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.focusTarget)).toBeNull();
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x), { timeout: 3_000 }).toBeGreaterThan(moveStart + 40);
 
-  await page.keyboard.press('KeyC');
+  await page.keyboard.press('KeyX');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.stance)).toBe('guard');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.command)).toBe('hold');
   await expect(page.locator('#hero-stance')).toContainText('ОХРАНА');
+
+  const manaBeforeAim = await page.evaluate(() => window.__TD_TEST__!.state().hero.mana);
+  await page.locator('[data-ability="r"]').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.aimAbility)).toBe('r');
+  await expect(page.locator('[data-ability="r"]')).toHaveClass(/aiming/);
+  await expect(page.locator('#hero-status')).toHaveText('выбор зоны');
+  await page.screenshot({ path: 'test-results/hero-aim-preview.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.aimAbility)).toBeNull();
+  expect(await page.evaluate(() => window.__TD_TEST__!.state().hero.mana)).toBeGreaterThanOrEqual(manaBeforeAim);
+  expect(await page.evaluate(() => window.__TD_TEST__!.state().hero.abilities.r.cooldown)).toBe(0);
+
+  await page.locator('[data-ability="r"]').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.aimAbility)).toBe('r');
+  await page.mouse.click(box.x + box.width * (600 / 1200), box.y + box.height * (350 / 700));
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.aimAbility)).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.abilities.r.cooldown ?? 0)).toBeGreaterThan(0);
   await page.screenshot({ path: 'test-results/hero-tactics.png', fullPage: true });
 });
 
