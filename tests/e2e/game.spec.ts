@@ -84,6 +84,11 @@ test('Кристалл можно потерять и начать заново'
 
 test('режим Хранителя меняет стартовую экономику', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('[data-difficulty="story"] .difficulty-rule')).toHaveCount(3);
+  await expect(page.locator('[data-difficulty="story"]')).toContainText('Герой: +15% урона');
+  await expect(page.locator('[data-difficulty="standard"]')).toContainText('12 секунд между волнами');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('Щиты боссов: +25% времени');
+  await page.screenshot({ path: 'test-results/difficulty-rules.png', fullPage: true });
   await page.locator('[data-difficulty="story"]').click();
   await page.locator('#begin').click();
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
@@ -98,6 +103,60 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('body')).toHaveClass(/high-contrast/);
   await page.locator('#close-settings').click();
   await expect(page.locator('#settings-dialog')).toBeHidden();
+});
+
+test('Повелитель бури ускоряет подготовку и снижает цену раннего старта', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-difficulty="rift"]').click();
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#gold')).toHaveText('360');
+  await expect(page.locator('#lives')).toHaveText('14');
+  await expect(page.locator('#difficulty-badge')).toHaveText('ПОВЕЛИТЕЛЬ БУРИ');
+  await expect(page.locator('#countdown')).toHaveText(/00:0[7-9]/);
+  await expect(page.locator('#start-wave')).toContainText(/\+◈ 1[0-4]/);
+});
+
+test('герой держит фокус, преследует цель и направляет рывок с WASD', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  const canvas = page.locator('canvas');
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
+  await page.locator('#zoom-out').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 2)).toBeLessThanOrEqual(1.01);
+
+  await expect(page.locator('#hero-stance')).toContainText('ОХРАНА');
+  await page.locator('#hero-stance').click();
+  await expect(page.locator('#hero-stance')).toContainText('ПОГОНЯ');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.stance)).toBe('pursuit');
+
+  await page.evaluate(() => window.__TD_TEST__?.spawnStress(1));
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies()[0])).toBeTruthy();
+  const enemy = await page.evaluate(() => window.__TD_TEST__!.enemies()[0]);
+  const box = await canvas.boundingBox();
+  if (!box || !enemy) throw new Error('Не удалось получить цель на карте');
+  await page.mouse.click(box.x + box.width * (enemy.x / 1200), box.y + box.height * (enemy.y / 700), { button: 'right' });
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.focusTarget)).toBe('Налётчик');
+  await expect(page.locator('#hero-focus')).toContainText('НАЛЁТЧИК');
+
+  const pursuitStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x), { timeout: 4_000 }).toBeLessThan(pursuitStart - 40);
+
+  const dashStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
+  await page.keyboard.down('KeyA');
+  await page.keyboard.press('Shift');
+  await page.keyboard.up('KeyA');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x)).toBeLessThan(dashStart - 150);
+
+  const moveStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
+  await page.mouse.click(box.x + box.width * (1050 / 1200), box.y + box.height * (600 / 700), { button: 'right' });
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.focusTarget)).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x), { timeout: 3_000 }).toBeGreaterThan(moveStart + 40);
+
+  await page.keyboard.press('KeyC');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.stance)).toBe('guard');
+  await expect(page.locator('#hero-stance')).toContainText('ОХРАНА');
+  await page.screenshot({ path: 'test-results/hero-tactics.png', fullPage: true });
 });
 
 test('тактический брифинг показывает состав, награду и статус волны', async ({ page }) => {

@@ -115,7 +115,7 @@ button { font: inherit; color: inherit; }
 .hero-panel { position: absolute; z-index: 76; bottom: 16px; right: 18px; height: 82px; padding: 9px 11px; border-radius: 10px; display: flex; gap: 10px; align-items: center; }
 .hero-portrait { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; position: relative; font-size: 0; background-color: #102633; background-image: url('/assets/units-atlas.png'); background-size: 300% 200%; background-position: 100% 100%; background-repeat: no-repeat; border: 2px solid #83e6ef; box-shadow: 0 0 18px rgba(77,213,235,.25); }
 .hero-portrait span { position: absolute; bottom: -4px; right: -3px; width: 22px; height: 22px; display: grid; place-items: center; background: #e3b54e; color: #261a12; border-radius: 50%; font-size: 11px; font-weight: 900; }
-.hero-vitals { width: 178px; }
+.hero-vitals { width: 166px; }
 .hero-title { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
 .hero-title small { color: #65dbe9; font-size: 8px; text-transform: uppercase; }
 .vital { position: relative; margin-top: 4px; }
@@ -126,6 +126,14 @@ button { font: inherit; color: inherit; }
 .vital.hp i { background: linear-gradient(90deg, #8f243b, #ef5368); }
 .vital.mana i { background: linear-gradient(90deg, #28668d, #55c5e9); }
 .vital.xp i { background: linear-gradient(90deg, #88662a, #f1c24c); }
+.hero-tactics { width: 66px; align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+#hero-stance { position: relative; min-height: 34px; padding: 5px 4px 4px; border: 1px solid rgba(116,223,242,.35); border-radius: 6px; background: rgba(42,105,119,.13); cursor: pointer; }
+#hero-stance kbd { position: absolute; top: 2px; left: 3px; color: #f5dc9b; font-size: 7px; }
+#hero-stance b { color: #9cefff; font-size: 8px; letter-spacing: .07em; }
+#hero-stance.pursuit { border-color: rgba(255,193,94,.6); background: rgba(151,92,35,.2); }
+#hero-stance.pursuit b { color: #ffd477; }
+#hero-focus { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #787382; font-size: 7px; font-weight: 900; text-align: center; letter-spacing: .03em; }
+#hero-focus.active { color: #ffd477; }
 .abilities { display: flex; gap: 6px; }
 .ability { width: 56px; height: 58px; position: relative; border: 1px solid #5f7184; border-radius: 7px; background: radial-gradient(circle at 50% 35%, #31697c, #17212d 70%); cursor: pointer; }
 .ability > i { font-style: normal; font-size: 23px; color: #b9f6ff; }
@@ -160,11 +168,15 @@ button { font: inherit; color: inherit; }
 @keyframes pulse { 50% { transform: scale(1.08); filter: brightness(1.25); } }
 
 .difficulty-picker { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); width: min(680px, 75vw); gap: 8px; margin-top: 14px; }
-.difficulty-option { display: flex; flex-direction: column; gap: 3px; min-height: 74px; padding: 10px 12px; text-align: left; border: 1px solid rgba(255,255,255,.15); border-radius: 7px; background: rgba(8,8,16,.7); cursor: pointer; }
+.difficulty-option { display: flex; flex-direction: column; gap: 5px; min-height: 145px; padding: 11px 12px; text-align: left; border: 1px solid rgba(255,255,255,.15); border-radius: 7px; background: rgba(8,8,16,.76); cursor: pointer; }
 .difficulty-option b { color: #f4e2b2; font-family: Georgia, serif; }
 .difficulty-option small { color: #aaa0b4; font-size: 10px; }
+.difficulty-rules { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.difficulty-rule { position: relative; padding-left: 10px; color: #b8b0c0; font-size: 8px; font-style: normal; line-height: 1.3; }
+.difficulty-rule::before { content: '◆'; position: absolute; left: 0; top: 0; color: #805ca0; font-size: 6px; }
 .difficulty-option i { color: #9dddeb; font-size: 9px; font-style: normal; margin-top: auto; }
 .difficulty-option.active { border-color: var(--gold); background: linear-gradient(145deg, rgba(113,73,145,.72), rgba(30,22,39,.9)); box-shadow: 0 0 22px rgba(171,105,255,.2); }
+.difficulty-option.active .difficulty-rule::before { color: var(--gold); }
 
 .tutorial { position: absolute; z-index: 105; right: 28px; top: 96px; width: 330px; padding: 16px 18px; border-radius: 9px; border-left: 3px solid var(--cyan); }
 .tutorial h3 { margin: 7px 0 6px; font-family: Georgia, serif; color: #c7f7ff; }
@@ -223,6 +235,9 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
   .hero-vitals { width: 134px; }
   .hero-title { font-size: 10px; }
   .hero-title small { display: none; }
+  .hero-tactics { width: 58px; gap: 3px; }
+  #hero-stance { min-height: 30px; }
+  #hero-focus { max-width: 58px; font-size: 6px; }
   .abilities { gap: 4px; }
   .ability { width: 44px; height: 48px; }
   .ability > i { font-size: 19px; }
@@ -247,4 +262,11 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
   .tower-panel { top: 350px; }
   .large-text .tower-panel { transform: none; font-size: 115%; }
   .build-panel, .hero-panel { bottom: 7px; }
+  .start-rune { margin-bottom: 2px; font-size: 46px; }
+  .overlay h1 { margin: 3px 0 5px; font-size: clamp(42px, 6vw, 62px); }
+  .overlay p { margin: 4px 0; }
+  .difficulty-picker { margin-top: 7px; }
+  .difficulty-option { min-height: 124px; padding: 8px 10px; }
+  .start-button { margin-top: 10px; padding: 12px 26px; }
+  .controls { margin-top: 14px; }
 }

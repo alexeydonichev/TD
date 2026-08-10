@@ -79,6 +79,10 @@ app.innerHTML = `
         ${bar('mana', 'МАНА')}
         ${bar('xp', 'ОПЫТ')}
       </div>
+      <div class="hero-tactics">
+        <button id="hero-stance" title="Сменить поведение героя" aria-label="Сменить режим героя"><kbd>C</kbd><b>ОХРАНА</b></button>
+        <small id="hero-focus">АВТОЦЕЛЬ</small>
+      </div>
       <div class="abilities">
         ${abilityButton('q', 'Q', 'ϟ', HERO.abilities.q.name, HERO.abilities.q.mana)}
         ${abilityButton('w', '⇧', '➤', HERO.abilities.w.name, HERO.abilities.w.mana)}
@@ -103,7 +107,7 @@ app.innerHTML = `
         ${difficultyButton('rift')}
       </div>
       <button id="begin" class="start-button">НАЧАТЬ ИГРУ</button>
-      <div class="controls"><span>WASD / ПКМ · герой</span><span>Колесо · масштаб</span><span>1–4 · башни</span><span>Q/Shift/E/R · умения</span></div>
+      <div class="controls"><span>WASD · точное движение</span><span>ПКМ · идти / фокус</span><span>C · охрана / погоня</span><span>Shift · рывок</span></div>
     </div>
 
     <div id="end-screen" class="overlay hidden">
@@ -128,7 +132,8 @@ app.innerHTML = `
         <label><input id="large-text" type="checkbox"> Увеличенный текст HUD</label>
         <label><input id="reduce-motion" type="checkbox"> Уменьшить анимации</label>
         <label><input id="screen-shake" type="checkbox"> Встряска камеры</label>
-        <p><b>Управление:</b> WASD — герой · ПКМ — идти к точке · Shift — рывок · Q/E/R — умения · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя.</p>
+        <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · Shift — рывок по WASD, к фокусу или курсору · Q предпочитает фокус · E/R — умения.</p>
+        <p><b>Карта:</b> 1–4 — башни · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя · пробел — пауза.</p>
         <button id="close-settings" class="primary">Готово</button>
       </section>
     </div>
@@ -138,7 +143,7 @@ app.innerHTML = `
 
 function difficultyButton(id: Difficulty): string {
   const difficulty = DIFFICULTIES[id];
-  return `<button class="difficulty-option" data-difficulty="${id}" role="radio" aria-checked="false"><b>${difficulty.name}</b><small>${difficulty.description}</small><i>×${difficulty.scoreMultiplier} к счёту</i></button>`;
+  return `<button class="difficulty-option" data-difficulty="${id}" role="radio" aria-checked="false"><b>${difficulty.name}</b><small>${difficulty.description}</small><span class="difficulty-rules">${difficulty.rules.map((rule) => `<em class="difficulty-rule">${rule}</em>`).join('')}</span><i>×${difficulty.scoreMultiplier} к счёту</i></button>`;
 }
 
 function buildButton(type: TowerType, key: string, icon: string): string {
@@ -199,6 +204,7 @@ get<HTMLButtonElement>('zoom-in').addEventListener('click', () => emit('td:actio
 get<HTMLButtonElement>('upgrade').addEventListener('click', () => emit('td:action', { type: 'upgrade' }));
 get<HTMLButtonElement>('sell').addEventListener('click', () => emit('td:action', { type: 'sell' }));
 get<HTMLButtonElement>('target-mode').addEventListener('click', () => emit('td:action', { type: 'target' }));
+get<HTMLButtonElement>('hero-stance').addEventListener('click', () => emit('td:action', { type: 'hero-stance' }));
 get<HTMLButtonElement>('restart').addEventListener('click', () => window.location.reload());
 document.querySelectorAll<HTMLButtonElement>('[data-tower]').forEach((button) => button.addEventListener('click', () => emit('td:action', { type: 'build', tower: button.dataset.tower as TowerType })));
 document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => button.addEventListener('click', () => emit('td:action', { type: 'ability', key: button.dataset.ability })));
@@ -257,9 +263,9 @@ document.addEventListener('keydown', (event) => {
 
 const tutorialSteps = [
   ['Постройте первую башню', 'Нажмите 1–4 или выберите башню внизу, затем укажите свободное место рядом с маршрутом.', '.build-panel'],
-  ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото.', '.wave-card'],
-  ['Переместите героя', 'Ведите Стража клавишами WASD или укажите точку правой кнопкой. Shift выполняет рывок к курсору.', '.hero-panel'],
-  ['Примените умение', 'Q поражает цепью целей, W совершает рывок, E усиливает защиту. R откроется на 3 уровне.', '.abilities'],
+  ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото с учётом выбранной сложности.', '.wave-card'],
+  ['Возьмите цель под контроль', 'ПКМ по земле отправляет героя в точку, ПКМ по врагу ставит фокус. C переключает безопасную «Охрану» и автоматическую «Погоню».', '.hero-panel'],
+  ['Примените умение', 'Q начинает цепь с фокус-цели. Shift идёт по направлению WASD, затем к фокусу и только потом к курсору. E защищает башни, R откроется на 3 уровне.', '.abilities'],
   ['Улучшите защиту', 'Выберите построенную башню и повысьте её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
 ] as const;
 let tutorialStep = -1;
@@ -325,7 +331,7 @@ function renderHud(state: HudState): void {
   get('strategy-hint').textContent = strategyHint(hintedWave);
   get('countdown').textContent = state.waveActive ? 'ИДЁТ ВОЛНА' : `00:${Math.ceil(state.countdown).toString().padStart(2, '0')}`;
   get<HTMLButtonElement>('start-wave').disabled = state.waveActive || state.wave >= state.totalWaves || state.result !== 'playing';
-  const bonus = earlyStartBonus(state.countdown, EARLY_START_GOLD_PER_SECOND);
+  const bonus = earlyStartBonus(state.countdown, EARLY_START_GOLD_PER_SECOND * DIFFICULTIES[state.difficulty].earlyStartGold);
   get<HTMLButtonElement>('start-wave').innerHTML = state.waveActive ? 'Волна в бою' : `Начать досрочно <kbd>+◈ ${bonus}</kbd>`;
   get('pause').textContent = state.paused ? '▶' : 'Ⅱ';
   get('speed').textContent = `×${state.speed}`;
@@ -422,6 +428,11 @@ function renderHero(state: HudState): void {
   const hero = state.hero;
   get('hero-level').textContent = String(hero.level);
   get('hero-status').textContent = hero.alive ? 'в бою' : `возрождение ${Math.ceil(hero.respawn)}с`;
+  const stance = get<HTMLButtonElement>('hero-stance');
+  stance.classList.toggle('pursuit', hero.stance === 'pursuit');
+  stance.querySelector('b')!.textContent = hero.stance === 'pursuit' ? 'ПОГОНЯ' : 'ОХРАНА';
+  get('hero-focus').textContent = hero.focusTarget ? `ЦЕЛЬ: ${hero.focusTarget.toUpperCase()}` : 'АВТОЦЕЛЬ';
+  get('hero-focus').classList.toggle('active', Boolean(hero.focusTarget));
   setBar('hp', hero.hp / hero.maxHp, `${Math.ceil(hero.hp)} / ${hero.maxHp}`);
   setBar('mana', hero.mana / hero.maxMana, `${Math.floor(hero.mana)} / ${hero.maxMana}`);
   setBar('xp', hero.level >= 3 ? 1 : hero.xp / hero.xpNext, hero.level >= 3 ? 'MAX' : `${hero.xp} / ${hero.xpNext}`);

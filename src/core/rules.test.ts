@@ -138,6 +138,20 @@ describe('способности героя', () => {
 });
 
 describe('режимы сложности', () => {
+  it('каждый режим задаёт собственный темп и правила героя', () => {
+    expect(DIFFICULTIES.standard).toMatchObject({
+      heroDamage: 1, heroSpeed: 1, heroManaRegen: 1, heroDamageTaken: 1,
+      heroRespawn: 1, intermission: 1, bossShield: 1, earlyStartGold: 1,
+    });
+    expect(DIFFICULTIES.story.heroDamage).toBeGreaterThan(1);
+    expect(DIFFICULTIES.story.heroDamageTaken).toBeLessThan(1);
+    expect(DIFFICULTIES.story.intermission).toBeGreaterThan(1);
+    expect(DIFFICULTIES.rift.heroManaRegen).toBeLessThan(1);
+    expect(DIFFICULTIES.rift.heroDamageTaken).toBeGreaterThan(1);
+    expect(DIFFICULTIES.rift.bossShield).toBeGreaterThan(1);
+    Object.values(DIFFICULTIES).forEach((difficulty) => expect(difficulty.rules).toHaveLength(3));
+  });
+
   it('плавно усиливает здоровье и скорость врагов к двадцатой волне', () => {
     expect(waveHpMultiplier(1)).toBe(1);
     expect(waveHpMultiplier(20)).toBeCloseTo(1.475);

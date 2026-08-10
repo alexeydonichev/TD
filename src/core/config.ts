@@ -10,16 +10,25 @@ export const WAVE_CLEAR_GOLD = 35;
 
 export const DIFFICULTIES: Record<string, DifficultyDefinition> = {
   story: {
-    id: 'story', name: 'Хранитель', description: 'Больше ресурсов, спокойнее темп', enemyHp: 0.78,
+    id: 'story', name: 'Хранитель', description: 'Тактическое знакомство без потери глубины', enemyHp: 0.78,
     enemySpeed: 0.9, enemyReward: 1.18, startingGold: 520, crystalLives: 26, scoreMultiplier: 0.75,
+    heroDamage: 1.15, heroSpeed: 1.08, heroManaRegen: 1.25, heroDamageTaken: 0.8, heroRespawn: 0.65,
+    intermission: 1.25, bossShield: 0.75, earlyStartGold: 1.25,
+    rules: ['Герой: +15% урона · регенерация маны +25%', 'Урон герою −20% · возврат через 4с', '15 секунд между волнами · щиты короче'],
   },
   standard: {
     id: 'standard', name: 'Защитник', description: 'Авторский баланс карты', enemyHp: 1,
     enemySpeed: 1, enemyReward: 1, startingGold: STARTING_GOLD, crystalLives: STARTING_LIVES, scoreMultiplier: 1,
+    heroDamage: 1, heroSpeed: 1, heroManaRegen: 1, heroDamageTaken: 1, heroRespawn: 1,
+    intermission: 1, bossShield: 1, earlyStartGold: 1,
+    rules: ['Герой и враги без модификаторов', '20 прочности · 430 стартового золота', '12 секунд между волнами · полная награда'],
   },
   rift: {
-    id: 'rift', name: 'Повелитель бури', description: 'Сильнее враги, меньше ресурсов', enemyHp: 1.28,
+    id: 'rift', name: 'Повелитель бури', description: 'Жёсткий темп и цена каждой ошибки', enemyHp: 1.28,
     enemySpeed: 1.1, enemyReward: 0.9, startingGold: 360, crystalLives: 14, scoreMultiplier: 1.5,
+    heroDamage: 1, heroSpeed: 1, heroManaRegen: 0.9, heroDamageTaken: 1.25, heroRespawn: 1.35,
+    intermission: 0.75, bossShield: 1.25, earlyStartGold: 0.8,
+    rules: ['14 прочности · награды за врагов −10%', 'Регенерация маны −10% · входящий урон +25%', '9 секунд между волнами · Щиты боссов: +25% времени'],
   },
 };
 
@@ -144,6 +153,8 @@ export const HERO = {
   speed: 210,
   attackDamage: 38,
   attackRange: 170,
+  pursuitRange: 380,
+  focusRadius: 38,
   attackMs: 700,
   respawnSeconds: 6,
   manaRegen: 9,

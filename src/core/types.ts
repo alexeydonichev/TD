@@ -3,6 +3,7 @@ export type TowerType = 'archer' | 'frost' | 'siege' | 'boost';
 export type EnemyType = 'raider' | 'runner' | 'brute' | 'winged' | 'warden' | 'titan' | 'boss';
 export type TargetMode = 'first' | 'strongest';
 export type Difficulty = 'story' | 'standard' | 'rift';
+export type HeroStance = 'guard' | 'pursuit';
 
 export interface DifficultyDefinition {
   id: Difficulty;
@@ -14,6 +15,15 @@ export interface DifficultyDefinition {
   startingGold: number;
   crystalLives: number;
   scoreMultiplier: number;
+  heroDamage: number;
+  heroSpeed: number;
+  heroManaRegen: number;
+  heroDamageTaken: number;
+  heroRespawn: number;
+  intermission: number;
+  bossShield: number;
+  earlyStartGold: number;
+  rules: [string, string, string];
 }
 
 export interface TowerLevel {
