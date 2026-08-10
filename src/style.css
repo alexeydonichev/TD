@@ -83,6 +83,15 @@ button { font: inherit; color: inherit; }
 .tower-panel p { color: #aaa2b2; font-size: 11px; line-height: 1.4; margin: 0 0 10px; }
 .tower-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 9px; }
 #target-mode { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 5px; padding: 5px 7px; cursor: pointer; font-size: 10px; }
+#target-mode:disabled { color: #aaa0b5; cursor: default; }
+.tower-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 7px; }
+.tower-stats span { min-width: 0; padding: 6px 5px; border: 1px solid rgba(255,255,255,.08); border-radius: 5px; background: rgba(255,255,255,.035); text-align: center; }
+.tower-stats small, .tower-performance small { display: block; color: #8e8797; font-size: 7px; letter-spacing: .08em; }
+.tower-stats b { display: block; margin-top: 2px; color: #f8d98b; font-size: 12px; }
+.tower-boosted { margin: -1px 0 7px; padding: 5px 7px; border: 1px solid rgba(183,140,255,.28); border-radius: 5px; color: #d9b8ff; background: rgba(108,70,150,.14); font-size: 8px; font-weight: 800; text-align: center; }
+.tower-performance { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-bottom: 8px; }
+.tower-performance span { padding: 5px 7px; border-left: 2px solid rgba(116,223,242,.45); background: rgba(68,130,143,.07); }
+.tower-performance b { display: block; margin-top: 2px; color: var(--cyan); font-size: 11px; }
 .tower-actions { display: flex; gap: 7px; }
 
 .build-panel { position: absolute; z-index: 75; bottom: 16px; left: 18px; padding: 9px 11px; border-radius: 10px; display: flex; align-items: center; gap: 10px; }
@@ -236,5 +245,6 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
   .wave-card, .boss-bar { top: 76px; }
   .camera-controls { top: 76px; }
   .tower-panel { top: 350px; }
+  .large-text .tower-panel { transform: none; font-size: 115%; }
   .build-panel, .hero-panel { bottom: 7px; }
 }

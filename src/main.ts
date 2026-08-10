@@ -48,6 +48,16 @@ app.innerHTML = `
       <h3 id="tower-name"></h3>
       <p id="tower-description"></p>
       <div class="tower-meta"><span>Уровень <b id="tower-level"></b></span><button id="target-mode"></button></div>
+      <div class="tower-stats" aria-label="Боевые характеристики башни">
+        <span><small id="tower-power-label">УРОН</small><b id="tower-power"></b></span>
+        <span><small id="tower-rate-label">АТАКИ</small><b id="tower-rate"></b></span>
+        <span><small>ДАЛЬНОСТЬ</small><b id="tower-range"></b></span>
+      </div>
+      <div id="tower-boosted" class="tower-boosted hidden">✦ Аура: +25% урона · +12% скорости</div>
+      <div class="tower-performance">
+        <span><small id="tower-performance-label">НАНЕСЕНО</small><b id="tower-performance"></b></span>
+        <span><small id="tower-kills-label">УНИЧТОЖЕНО</small><b id="tower-kills"></b></span>
+      </div>
       <div class="tower-actions"><button id="upgrade" class="primary"></button><button id="sell" class="danger"></button></div>
     </aside>
 
@@ -386,7 +396,22 @@ function renderTowerPanel(state: HudState): void {
   get('tower-name').textContent = state.selectedTower.name;
   get('tower-description').textContent = state.selectedTower.description;
   get('tower-level').textContent = String(state.selectedTower.level);
-  get('target-mode').textContent = `Цель: ${state.selectedTower.mode}`;
+  const support = state.selectedTower.type === 'boost';
+  const targetMode = get<HTMLButtonElement>('target-mode');
+  targetMode.textContent = support ? 'Пассивная аура' : `Цель: ${state.selectedTower.mode}`;
+  targetMode.disabled = support;
+  get('tower-power-label').textContent = support ? 'УСИЛЕНИЕ' : 'УРОН';
+  get('tower-rate-label').textContent = support ? 'СКОРОСТЬ' : 'АТАКИ';
+  get('tower-power').textContent = support ? '+25%' : String(Math.round(state.selectedTower.damage));
+  get('tower-rate').textContent = support ? '+12%' : `${state.selectedTower.attacksPerSecond.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/с`;
+  get('tower-range').textContent = String(state.selectedTower.range);
+  get('tower-boosted').classList.toggle('hidden', !state.selectedTower.boosted);
+  get('tower-performance-label').textContent = support ? 'В АУРЕ' : 'НАНЕСЕНО';
+  get('tower-kills-label').textContent = support ? 'РОЛЬ' : 'УНИЧТОЖЕНО';
+  const performance = support ? state.selectedTower.auraTargets : Math.round(state.selectedTower.damageDealt);
+  get('tower-performance').textContent = performance.toLocaleString('ru-RU');
+  get('tower-performance').dataset.value = String(performance);
+  get('tower-kills').textContent = support ? 'ПОДДЕРЖКА' : String(state.selectedTower.kills);
   const upgrade = get<HTMLButtonElement>('upgrade');
   upgrade.disabled = state.selectedTower.nextCost === null;
   upgrade.textContent = state.selectedTower.nextCost === null ? 'Макс. уровень' : `Улучшить · ◈ ${state.selectedTower.nextCost}`;

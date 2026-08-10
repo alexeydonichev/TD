@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, earlyStartBonus, isWaveComplete, loseLives,
+  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, earlyStartBonus, isWaveComplete, loseLives,
   matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, upgrade,
   waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
@@ -19,6 +19,12 @@ describe('боевые формулы', () => {
     expect(applyArmor(100, 25)).toBeCloseTo(80);
     expect(applyArmor(-10, 25)).toBe(0);
     expect(applyArmor(100, -25)).toBeGreaterThan(100);
+  });
+
+  it('считает только фактически нанесённый урон без избыточного добивания', () => {
+    expect(damageOutcome(50, 100, 0)).toEqual({ dealt: 50, hp: 0, killed: true });
+    expect(damageOutcome(100, 100, 0, 0.3)).toEqual({ dealt: 30, hp: 70, killed: false });
+    expect(damageOutcome(0, 100, 0)).toEqual({ dealt: 0, hp: 0, killed: false });
   });
 
   it('ограничивает замедление безопасным максимумом', () => {

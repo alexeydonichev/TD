@@ -36,6 +36,13 @@ export function applyArmor(rawDamage: number, armor: number): number {
   return Math.max(0, rawDamage * multiplier);
 }
 
+export function damageOutcome(hp: number, rawDamage: number, armor: number, damageMultiplier = 1): { dealt: number; hp: number; killed: boolean } {
+  const currentHp = Math.max(0, hp);
+  const dealt = Math.min(currentHp, applyArmor(rawDamage, armor) * Math.max(0, damageMultiplier));
+  const remainingHp = Math.max(0, currentHp - dealt);
+  return { dealt, hp: remainingHp, killed: currentHp > 0 && remainingHp <= 0 };
+}
+
 export function applySlow(baseSpeed: number, slow: number): number {
   return baseSpeed * (1 - Math.max(0, Math.min(0.65, slow)));
 }

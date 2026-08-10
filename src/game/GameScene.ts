@@ -4,7 +4,7 @@ import {
   INTERMISSION_SECONDS, PATH, TOWERS, WAVES,
 } from '../core/config';
 import {
-  applyArmor, applySlow, chainTargets, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy,
+  applySlow, chainTargets, damageOutcome, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy,
   selectTarget, sellValue, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
 import type { Difficulty, EnemyType, Point, TargetMode, TowerType } from '../core/types';
@@ -26,6 +26,8 @@ interface TowerUnit {
   targetMode: TargetMode;
   nextAttackAt: number;
   paidUpgrades: number[];
+  damageDealt: number;
+  kills: number;
   container: Phaser.GameObjects.Container;
   art: Phaser.GameObjects.Graphics;
   sprite: Phaser.GameObjects.Image;
@@ -54,6 +56,7 @@ interface EnemyUnit {
 interface Projectile {
   view: Phaser.GameObjects.Arc;
   target: EnemyUnit;
+  source: TowerUnit;
   damage: number;
   speed: number;
   splash: number;
@@ -108,7 +111,22 @@ export interface HudState {
   towerCount: number;
   buildType: TowerType | null;
   placementMessage: string;
-  selectedTower: null | { name: string; level: number; mode: string; nextCost: number | null; sellValue: number; description: string };
+  selectedTower: null | {
+    type: TowerType;
+    name: string;
+    level: number;
+    mode: string;
+    nextCost: number | null;
+    sellValue: number;
+    description: string;
+    damage: number;
+    attacksPerSecond: number;
+    range: number;
+    damageDealt: number;
+    kills: number;
+    boosted: boolean;
+    auraTargets: number;
+  };
   hero: { x: number; y: number; hp: number; maxHp: number; mana: number; maxMana: number; xp: number; xpNext: number; level: number; alive: boolean; respawn: number; abilities: Record<string, { cooldown: number; mana: number; locked: boolean }> };
   boss: null | { name: string; hp: number; maxHp: number; phase: number; shielded: boolean };
   cameraZoom: number;
@@ -445,7 +463,10 @@ export class GameScene extends Phaser.Scene {
       this.drawSelection();
       this.emitHud(true);
     });
-    const tower: TowerUnit = { id: this.nextId++, type: this.buildType, x: point.x, y: point.y, level: 1, targetMode: 'first', nextAttackAt: 0, paidUpgrades: [], container, art, sprite };
+    const tower: TowerUnit = {
+      id: this.nextId++, type: this.buildType, x: point.x, y: point.y, level: 1, targetMode: 'first', nextAttackAt: 0,
+      paidUpgrades: [], damageDealt: 0, kills: 0, container, art, sprite,
+    };
     this.towers.push(tower);
     this.drawTower(tower);
     if (!this.reduceMotion) this.tweens.add({ targets: sprite, scaleX: 0.118, scaleY: 0.118, duration: 180, yoyo: true, ease: 'Back.out' });
@@ -511,7 +532,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private toggleTargetMode(): void {
-    if (!this.selectedTower) return;
+    if (!this.selectedTower || this.selectedTower.type === 'boost') return;
     this.selectedTower.targetMode = this.selectedTower.targetMode === 'first' ? 'strongest' : 'first';
   }
 
@@ -704,7 +725,7 @@ export class GameScene extends Phaser.Scene {
   private fireProjectile(tower: TowerUnit, target: EnemyUnit, damage: number, splash: number, slow: number): void {
     const color = TOWERS[tower.type].color;
     const view = this.add.circle(tower.x, tower.y - 10, tower.type === 'siege' ? 7 : 4, color).setDepth(30);
-    this.projectiles.push({ view, target, damage, speed: tower.type === 'siege' ? 360 : 620, splash, slow, color });
+    this.projectiles.push({ view, target, source: tower, damage, speed: tower.type === 'siege' ? 360 : 620, splash, slow, color });
     emit('td:sound', 'shot');
   }
 
@@ -737,7 +758,9 @@ export class GameScene extends Phaser.Scene {
       ? this.enemies.filter((enemy) => enemy.alive && distance(enemy.container, center) <= projectile.splash)
       : [projectile.target];
     targets.forEach((enemy) => {
-      this.hitEnemy(enemy, projectile.damage, false);
+      const outcome = this.hitEnemy(enemy, projectile.damage, false);
+      projectile.source.damageDealt += outcome.dealt;
+      if (outcome.killed) projectile.source.kills += 1;
       if (projectile.slow > 0) {
         enemy.slow = Math.max(enemy.slow, projectile.slow);
         enemy.slowUntil = this.simTime + 2200;
@@ -760,13 +783,15 @@ export class GameScene extends Phaser.Scene {
     emit('td:sound', 'hit');
   }
 
-  private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean): void {
-    if (!enemy.alive) return;
+  private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean): { dealt: number; hp: number; killed: boolean } {
+    if (!enemy.alive) return { dealt: 0, hp: Math.max(0, enemy.hp), killed: false };
     const armor = magic ? this.enemyDefinition(enemy.type).armor * 0.2 : this.enemyDefinition(enemy.type).armor;
     const shield = this.isBossType(enemy.type) && enemy.shieldUntil > this.simTime ? 0.3 : 1;
-    enemy.hp -= applyArmor(rawDamage, armor) * shield;
+    const outcome = damageOutcome(enemy.hp, rawDamage, armor, shield);
+    enemy.hp = outcome.hp;
     this.drawEnemyHealth(enemy);
-    if (enemy.hp <= 0) this.destroyEnemy(enemy, true);
+    if (outcome.killed) this.destroyEnemy(enemy, true);
+    return outcome;
   }
 
   private updateHero(delta: number): void {
@@ -1006,6 +1031,11 @@ export class GameScene extends Phaser.Scene {
   private getHudState(): HudState {
     const selected = this.selectedTower;
     const definition = selected ? TOWERS[selected.type] : null;
+    const selectedLevel = selected && definition ? definition.levels[selected.level - 1] : null;
+    const selectedBoosted = Boolean(selected && selected.type !== 'boost' && this.towers.some((tower) => tower.type === 'boost' && distance(selected, tower) <= TOWERS.boost.levels[tower.level - 1].range));
+    const auraTargets = selected && selected.type === 'boost' && selectedLevel
+      ? this.towers.filter((tower) => tower.type !== 'boost' && distance(selected, tower) <= selectedLevel.range).length
+      : 0;
     const nextXp = this.hero.level === 1 ? 100 : this.hero.level === 2 ? 240 : 240;
     const boss = this.enemies.find((enemy) => this.isBossType(enemy.type) && enemy.alive);
     const abilityState = (key: 'q' | 'w' | 'e' | 'r') => ({
@@ -1021,10 +1051,13 @@ export class GameScene extends Phaser.Scene {
       waveTitle: WAVES[upcomingIndex]?.title ?? '', waveIntel: WAVES[upcomingIndex]?.intel ?? '',
       paused: this.paused, speed: this.speed, difficulty: this.difficulty, difficultyName: DIFFICULTIES[this.difficulty].name,
       score: this.score, towerCount: this.towers.length, buildType: this.buildType, placementMessage: this.placementMessage,
-      selectedTower: selected && definition ? {
-        name: definition.name, level: selected.level, mode: selected.targetMode === 'first' ? 'Первая по пути' : 'Самая сильная',
+      selectedTower: selected && definition && selectedLevel ? {
+        type: selected.type, name: definition.name, level: selected.level, mode: selected.targetMode === 'first' ? 'Первая по пути' : 'Самая сильная',
         nextCost: definition.levels[selected.level - 1].upgradeCost,
         sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description,
+        damage: selectedLevel.damage * (selectedBoosted ? 1.25 : 1),
+        attacksPerSecond: selectedLevel.attackMs > 0 ? 1000 / selectedLevel.attackMs * (selectedBoosted ? 1.12 : 1) : 0,
+        range: selectedLevel.range, damageDealt: selected.damageDealt, kills: selected.kills, boosted: selectedBoosted, auraTargets,
       } : null,
       hero: {
         x: this.hero.x, y: this.hero.y, hp: Math.max(0, this.hero.hp), maxHp: HERO.maxHp, mana: this.hero.mana, maxMana: HERO.maxMana, xp: this.hero.xp,

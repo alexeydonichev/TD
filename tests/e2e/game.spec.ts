@@ -135,6 +135,46 @@ test('тактический брифинг показывает состав, �
   await page.screenshot({ path: 'test-results/tactical-briefing.png', fullPage: true });
 });
 
+test('инспектор башни показывает характеристики и боевой вклад', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  const canvas = page.locator('canvas');
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
+  await page.locator('#zoom-out').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 2)).toBeLessThanOrEqual(1.01);
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Canvas has no bounding box');
+  const clickWorld = async (x: number, y: number) => page.mouse.click(box.x + box.width * (x / 1200), box.y + box.height * (y / 700));
+
+  await page.locator('[data-tower="archer"]').click();
+  await clickWorld(360, 250);
+  await expect(page.locator('#tower-name')).toHaveText('Стрелковая башня');
+  await expect(page.locator('#tower-power')).toHaveText('24');
+  await expect(page.locator('#tower-rate')).toContainText('/с');
+  await expect(page.locator('#tower-range')).toHaveText('150');
+
+  await page.locator('#start-wave').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().selectedTower?.damageDealt ?? 0), { timeout: 12_000 }).toBeGreaterThan(0);
+  await expect.poll(async () => Number(await page.locator('#tower-performance').getAttribute('data-value')), { timeout: 5_000 }).toBeGreaterThan(0);
+  await expect.poll(async () => Number(await page.locator('#tower-kills').textContent()), { timeout: 5_000 }).toBeGreaterThan(0);
+
+  await page.locator('[data-tower="boost"]').click();
+  await clickWorld(440, 300);
+  await expect(page.locator('#tower-name')).toHaveText('Башня усиления');
+  await expect(page.locator('#tower-power')).toHaveText('+25%');
+  await expect(page.locator('#tower-rate')).toHaveText('+12%');
+  await expect(page.locator('#target-mode')).toHaveText('Пассивная аура');
+  await expect(page.locator('#target-mode')).toBeDisabled();
+  await expect(page.locator('#tower-performance-label')).toHaveText('В АУРЕ');
+  await expect(page.locator('#tower-performance')).toHaveText('1');
+  await page.screenshot({ path: 'test-results/tower-inspector.png', fullPage: true });
+
+  await clickWorld(360, 250);
+  await expect(page.locator('#tower-name')).toHaveText('Стрелковая башня');
+  await expect(page.locator('#tower-power')).toHaveText('30');
+  await expect(page.locator('#tower-boosted')).toBeVisible();
+});
+
 test('профиль держит 100 активных противников без утечки объектов', async ({ page }) => {
   await page.goto('/?test=1');
   await page.locator('#begin').click();
