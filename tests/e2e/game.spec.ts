@@ -303,8 +303,9 @@ test('каждый уровень меняет боеприпас и залп б
     await page.locator(`[data-tower="${type}"]`).click();
     await clickWorld(x, y);
     await expect(page.locator('#tower-description')).toContainText(levelOne);
-    await page.locator('#upgrade').click();
-    await page.locator('#upgrade').click();
+    await expect(page.locator('#upgrade')).toContainText('U');
+    await page.keyboard.press('KeyU');
+    await page.keyboard.press('KeyU');
     await expect(page.locator('#tower-level')).toHaveText('3');
     await expect(page.locator('#tower-description')).toContainText(levelThree);
   }

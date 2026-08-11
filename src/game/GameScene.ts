@@ -247,7 +247,7 @@ export class GameScene extends Phaser.Scene {
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _objects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       this.setCameraZoom(dy < 0 ? 'in' : 'out');
     });
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,C,X,Q,E,R,SHIFT,UP,DOWN,LEFT,RIGHT,SPACE,F,ESC,ONE,TWO,THREE,FOUR') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys('W,A,S,D,C,X,Q,E,R,U,SHIFT,UP,DOWN,LEFT,RIGHT,SPACE,F,ESC,ONE,TWO,THREE,FOUR') as Record<string, Phaser.Input.Keyboard.Key>;
     this.keys.ONE.on('down', () => this.chooseBuild('archer'));
     this.keys.TWO.on('down', () => this.chooseBuild('frost'));
     this.keys.THREE.on('down', () => this.chooseBuild('siege'));
@@ -261,6 +261,10 @@ export class GameScene extends Phaser.Scene {
     this.keys.SHIFT.on('down', () => this.useAbility('w'));
     this.keys.E.on('down', () => this.useAbility('e'));
     this.keys.R.on('down', () => this.useAbility('r'));
+    this.keys.U.on('down', () => {
+      this.upgradeSelected();
+      this.emitHud(true);
+    });
     this.offAction = on<Action>('td:action', (action) => this.handleAction(action));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.offAction?.());
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT).setZoom(this.cameraTargetZoom).centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);

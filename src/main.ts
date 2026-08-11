@@ -62,7 +62,7 @@ app.innerHTML = `
         <span><small id="tower-performance-label">НАНЕСЕНО</small><b id="tower-performance"></b></span>
         <span><small id="tower-kills-label">УНИЧТОЖЕНО</small><b id="tower-kills"></b></span>
       </div>
-      <div class="tower-actions"><button id="upgrade" class="primary"></button><button id="sell" class="danger"></button></div>
+      <div class="tower-actions"><button id="upgrade" class="primary" aria-keyshortcuts="U" title="Улучшить выбранную башню (U)"></button><button id="sell" class="danger"></button></div>
     </aside>
 
     <section class="build-panel glass" aria-label="Строительство">
@@ -288,7 +288,7 @@ const tutorialSteps = [
   ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото с учётом выбранной сложности.', '.wave-card'],
   ['Возьмите цель под контроль', 'ПКМ по земле отправляет героя в точку, ПКМ по врагу ставит фокус. C переключает «Охрану/Погоню», X немедленно останавливает героя.', '.hero-panel'],
   ['Примените умение', 'Q начинает цепь с фокус-цели. Shift идёт по WASD, затем к фокусу и курсору. R показывает зону бури до подтверждения ЛКМ.', '.abilities'],
-  ['Улучшите защиту', 'Выберите построенную башню и повысьте её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
+  ['Улучшите защиту', 'Выберите построенную башню и нажмите U, чтобы повысить её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
 ] as const;
 let tutorialStep = -1;
 
@@ -447,7 +447,7 @@ function renderTowerPanel(state: HudState): void {
   get('tower-kills').textContent = support ? 'ПОДДЕРЖКА' : String(state.selectedTower.kills);
   const upgrade = get<HTMLButtonElement>('upgrade');
   upgrade.disabled = state.selectedTower.nextCost === null;
-  upgrade.textContent = state.selectedTower.nextCost === null ? 'Макс. уровень' : `Улучшить · ◈ ${state.selectedTower.nextCost}`;
+  upgrade.innerHTML = state.selectedTower.nextCost === null ? 'Макс. уровень <kbd>U</kbd>' : `Улучшить <kbd>U</kbd> · ◈ ${state.selectedTower.nextCost}`;
   get('sell').textContent = `Продать · ◈ ${state.selectedTower.sellValue}`;
 }
 
