@@ -36,6 +36,8 @@ export interface TowerLevel {
   range: number;
   attackMs: number;
   upgradeCost: number | null;
+  projectileCount: number;
+  projectileScale: number;
 }
 
 export interface TowerDefinition {

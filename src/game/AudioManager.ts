@@ -1,4 +1,4 @@
-export type SoundName = 'build' | 'shot' | 'hit' | 'spell' | 'death' | 'wave' | 'boss' | 'victory' | 'defeat';
+export type SoundName = 'build' | 'shot' | 'arrow' | 'frost' | 'cannon' | 'hit' | 'spell' | 'death' | 'wave' | 'boss' | 'victory' | 'defeat';
 
 export class AudioManager {
   private context: AudioContext | null = null;
@@ -27,6 +27,9 @@ export class AudioManager {
     if (!this.effectsEnabled || !this.context) return;
     if (name === 'build') this.chord([330, 440, 660], 0.18, 'triangle', 0.026);
     if (name === 'shot') this.tone(880, 0.055, 'square', 0.018, 520);
+    if (name === 'arrow') { this.noise(0.026, 0.008, 4800); this.tone(1280, 0.045, 'triangle', 0.014, 720); }
+    if (name === 'frost') { this.tone(1320, 0.13, 'sine', 0.012, 1980); this.tone(880, 0.16, 'triangle', 0.01, 1480, 0.018); }
+    if (name === 'cannon') { this.noise(0.12, 0.033, 520); this.tone(104, 0.16, 'sine', 0.027, 48); }
     if (name === 'hit') { this.noise(0.06, 0.025, 900); this.tone(150, 0.07, 'sine', 0.02, 85); }
     if (name === 'spell') { this.chord([392, 587, 784], 0.24, 'sine', 0.025); this.tone(220, 0.3, 'triangle', 0.018, 980); }
     if (name === 'death') { this.noise(0.14, 0.034, 430); this.tone(130, 0.22, 'sawtooth', 0.02, 46); }

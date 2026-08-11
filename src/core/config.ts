@@ -67,9 +67,9 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 0,
     slow: 0,
     levels: [
-      { damage: 24, range: 150, attackMs: 620, upgradeCost: 90 },
-      { damage: 39, range: 165, attackMs: 520, upgradeCost: 155 },
-      { damage: 63, range: 180, attackMs: 430, upgradeCost: null },
+      { damage: 24, range: 150, attackMs: 620, upgradeCost: 90, projectileCount: 1, projectileScale: 0.88 },
+      { damage: 39, range: 165, attackMs: 520, upgradeCost: 155, projectileCount: 2, projectileScale: 1.02 },
+      { damage: 63, range: 180, attackMs: 430, upgradeCost: null, projectileCount: 3, projectileScale: 1.18 },
     ],
   },
   frost: {
@@ -82,9 +82,9 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 38,
     slow: 0.32,
     levels: [
-      { damage: 17, range: 135, attackMs: 900, upgradeCost: 105 },
-      { damage: 28, range: 150, attackMs: 800, upgradeCost: 170 },
-      { damage: 45, range: 170, attackMs: 690, upgradeCost: null },
+      { damage: 17, range: 135, attackMs: 900, upgradeCost: 105, projectileCount: 1, projectileScale: 0.9 },
+      { damage: 28, range: 150, attackMs: 800, upgradeCost: 170, projectileCount: 2, projectileScale: 1.08 },
+      { damage: 45, range: 170, attackMs: 690, upgradeCost: null, projectileCount: 3, projectileScale: 1.28 },
     ],
   },
   siege: {
@@ -97,9 +97,9 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 72,
     slow: 0,
     levels: [
-      { damage: 72, range: 175, attackMs: 1700, upgradeCost: 135 },
-      { damage: 118, range: 190, attackMs: 1500, upgradeCost: 210 },
-      { damage: 188, range: 210, attackMs: 1300, upgradeCost: null },
+      { damage: 72, range: 175, attackMs: 1700, upgradeCost: 135, projectileCount: 1, projectileScale: 0.92 },
+      { damage: 118, range: 190, attackMs: 1500, upgradeCost: 210, projectileCount: 1, projectileScale: 1.18 },
+      { damage: 188, range: 210, attackMs: 1300, upgradeCost: null, projectileCount: 1, projectileScale: 1.52 },
     ],
   },
   boost: {
@@ -112,9 +112,9 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 0,
     slow: 0,
     levels: [
-      { damage: 0, range: 135, attackMs: 0, upgradeCost: 120 },
-      { damage: 0, range: 160, attackMs: 0, upgradeCost: 185 },
-      { damage: 0, range: 190, attackMs: 0, upgradeCost: null },
+      { damage: 0, range: 135, attackMs: 0, upgradeCost: 120, projectileCount: 0, projectileScale: 1 },
+      { damage: 0, range: 160, attackMs: 0, upgradeCost: 185, projectileCount: 0, projectileScale: 1 },
+      { damage: 0, range: 190, attackMs: 0, upgradeCost: null, projectileCount: 0, projectileScale: 1 },
     ],
   },
 };

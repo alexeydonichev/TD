@@ -9,6 +9,10 @@ import {
 } from '../core/rules';
 import type { Difficulty, EnemyType, HeroStance, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
+import {
+  animateTowerFire, createProjectileImpact, createProjectileVisual, drawTowerDetails, enemyMotionPose,
+  type OffensiveTowerType,
+} from './combatVisuals';
 
 type Action =
   | { type: 'begin' } | { type: 'build'; tower: TowerType } | { type: 'start-wave' }
@@ -32,6 +36,7 @@ interface TowerUnit {
   container: Phaser.GameObjects.Container;
   art: Phaser.GameObjects.Graphics;
   sprite: Phaser.GameObjects.Image;
+  details: Phaser.GameObjects.Graphics;
 }
 
 interface EnemyUnit {
@@ -52,17 +57,23 @@ interface EnemyUnit {
   art: Phaser.GameObjects.Graphics;
   sprite: Phaser.GameObjects.Image;
   hpBar: Phaser.GameObjects.Graphics;
+  spriteBaseScale: number;
+  spriteBaseY: number;
+  motionSeed: number;
+  laneOffset: number;
+  hitPulseUntil: number;
 }
 
 interface Projectile {
-  view: Phaser.GameObjects.Arc;
+  view: Phaser.GameObjects.Container;
   target: EnemyUnit;
   source: TowerUnit;
   damage: number;
   speed: number;
   splash: number;
   slow: number;
-  color: number;
+  kind: OffensiveTowerType;
+  level: number;
 }
 
 interface Storm {
@@ -129,6 +140,7 @@ export interface HudState {
     damage: number;
     attacksPerSecond: number;
     range: number;
+    projectileCount: number;
     damageDealt: number;
     kills: number;
     boosted: boolean;
@@ -208,7 +220,7 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     this.load.image('valley-landscape', 'assets/rift-valley-map-v3.png');
     this.load.spritesheet('tower-art', 'assets/towers-atlas.png', { frameWidth: 512, frameHeight: 512 });
-    this.load.spritesheet('unit-art', 'assets/units-atlas.png', { frameWidth: 320, frameHeight: 480 });
+    this.load.spritesheet('unit-motion-art', 'assets/units-motion-atlas.png', { frameWidth: 384, frameHeight: 512 });
     this.load.image('hero-v2', 'assets/hero-v2.png');
   }
 
@@ -284,6 +296,7 @@ export class GameScene extends Phaser.Scene {
     this.updateEnemies(delta);
     this.updateHero(delta);
     this.updateTowers();
+    this.updateTowerVisuals();
     this.updateProjectiles(delta);
     this.updateStorms();
     this.emitHud();
@@ -655,9 +668,10 @@ export class GameScene extends Phaser.Scene {
     const definition = TOWERS[this.buildType];
     this.gold -= definition.cost;
     const art = this.add.graphics();
+    const details = this.add.graphics();
     const frame = { archer: 0, frost: 1, siege: 2, boost: 3 }[this.buildType];
     const sprite = this.add.image(0, -13, 'tower-art', frame).setScale(0.105);
-    const container = this.add.container(snapped.x, snapped.y, [art, sprite]).setDepth(15);
+    const container = this.add.container(snapped.x, snapped.y, [art, sprite, details]).setDepth(15);
     container.setSize(52, 52).setInteractive(new Phaser.Geom.Circle(0, 0, 28), Phaser.Geom.Circle.Contains);
     container.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
@@ -670,7 +684,7 @@ export class GameScene extends Phaser.Scene {
     });
     const tower: TowerUnit = {
       id: this.nextId++, type: this.buildType, x: snapped.x, y: snapped.y, level: 1, targetMode: 'first', nextAttackAt: 0,
-      paidUpgrades: [], damageDealt: 0, kills: 0, container, art, sprite,
+      paidUpgrades: [], damageDealt: 0, kills: 0, container, art, sprite, details,
     };
     this.towers.push(tower);
     this.drawTower(tower);
@@ -691,8 +705,26 @@ export class GameScene extends Phaser.Scene {
     art.fillStyle(definition.color, 0.11 + tower.level * 0.025).fillCircle(0, -6, 30 + tower.level * 3);
     art.lineStyle(1.5 + tower.level * 0.5, definition.color, 0.52).strokeCircle(0, -6, 25 + tower.level * 2);
     tower.sprite.setFrame({ archer: 0, frost: 1, siege: 2, boost: 3 }[tower.type]);
-    tower.sprite.setScale(0.098 + tower.level * 0.008).setTint(tower.level === 3 ? 0xfff1c2 : 0xffffff);
+    tower.sprite.setPosition(0, -13).setAngle(0).setScale(0.098 + tower.level * 0.008).setTint(tower.level === 3 ? 0xfff1c2 : 0xffffff);
+    drawTowerDetails(tower.details, tower.type, tower.level, definition.color);
     for (let index = 0; index < tower.level; index += 1) art.fillStyle(0xffdc72, 1).fillCircle(-10 + index * 10, 23, 3);
+  }
+
+  private updateTowerVisuals(): void {
+    for (const tower of this.towers) {
+      if (this.reduceMotion) {
+        tower.details.setRotation(0).setScale(1).setAlpha(1);
+        continue;
+      }
+      const phase = this.simTime / 1000 + tower.id * 0.37;
+      if (tower.type === 'frost') {
+        tower.details.setRotation(phase * (0.22 + tower.level * 0.05)).setScale(1 + Math.sin(phase * 2) * 0.035).setAlpha(0.88 + Math.sin(phase * 2.4) * 0.1);
+      } else if (tower.type === 'boost') {
+        tower.details.setRotation(-phase * (0.18 + tower.level * 0.04)).setScale(1 + Math.sin(phase * 1.7) * 0.05).setAlpha(0.82 + Math.sin(phase * 2) * 0.14);
+      } else {
+        tower.details.setRotation(0).setScale(1).setAlpha(0.9 + Math.sin(phase * 1.9) * 0.08);
+      }
+    }
   }
 
   private selectTowerAt(point: Point): void {
@@ -787,15 +819,18 @@ export class GameScene extends Phaser.Scene {
     const definition = this.enemyDefinition(type);
     const position = this.pointAtProgress(progress);
     const art = this.add.graphics();
-    const frame = { raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 4, boss: 4 }[type];
-    const spriteScale = { raider: 0.095, runner: 0.09, brute: 0.125, winged: 0.115, warden: 0.16, titan: 0.185, boss: 0.21 }[type];
-    const sprite = this.add.image(0, this.isBossType(type) ? -28 : -18, 'unit-art', frame).setScale(spriteScale);
+    const frame = { raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 5, boss: 6 }[type];
+    const spriteScale = { raider: 0.15, runner: 0.145, brute: 0.17, winged: 0.17, warden: 0.205, titan: 0.23, boss: 0.225 }[type];
+    const spriteBaseY = this.isBossType(type) ? -39 : type === 'winged' ? -34 : -29;
+    const sprite = this.add.image(0, spriteBaseY, 'unit-motion-art', frame).setScale(spriteScale);
     const hpBar = this.add.graphics();
     const container = this.add.container(position.x, position.y, [art, sprite, hpBar]).setDepth(type === 'winged' ? 25 : 16);
     const maxHp = definition.maxHp * waveHpMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveHpGrowth) * ENEMY_HP_SCALE;
     const enemy: EnemyUnit = {
       id: this.nextId++, type, hp: maxHp, maxHp, progress, alive: true, slow: 0, slowUntil: 0, phase: 1,
       shieldUntil: 0, lastShieldAt: this.simTime, summonedPhase: false, contactCooldown: 0, container, art, sprite, hpBar,
+      spriteBaseScale: spriteScale, spriteBaseY, motionSeed: this.nextId * 0.73,
+      laneOffset: this.isBossType(type) ? 0 : ((this.nextId % 5) - 2) * (type === 'winged' ? 3.5 : 2.5), hitPulseUntil: 0,
     };
     this.enemies.push(enemy);
     this.drawEnemy(enemy);
@@ -820,7 +855,7 @@ export class GameScene extends Phaser.Scene {
       art.lineStyle(2, definition.color, 0.46).strokeCircle(0, -7, definition.radius + 6);
       if (enemy.type === 'brute') art.lineStyle(5, 0xbbb0c6, 0.85).strokeCircle(0, 0, definition.radius + 3);
     }
-    enemy.sprite.setFrame({ raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 4, boss: 4 }[enemy.type]);
+    enemy.sprite.setFrame({ raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 5, boss: 6 }[enemy.type]);
     enemy.sprite.setTint(this.enemyTint(enemy));
     this.drawEnemyHealth(enemy);
   }
@@ -866,8 +901,18 @@ export class GameScene extends Phaser.Scene {
       const phaseMultiplier = this.isBossType(enemy.type) && enemy.phase === 2 ? 1.28 : 1;
       enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE * phaseMultiplier, slow) * delta / 1000;
       const point = this.pointAtProgress(enemy.progress);
-      enemy.container.setPosition(point.x, point.y + (definition.flying ? -18 + Math.sin(this.simTime / 120) * 5 : 0));
-      if (this.hero.alive && !definition.flying && distance(point, this.hero) < definition.radius + 24 && this.simTime >= enemy.contactCooldown) {
+      const behind = this.pointAtProgress(Math.max(0, enemy.progress - 12));
+      const ahead = this.pointAtProgress(Math.min(this.routeTotal, enemy.progress + 12));
+      const heading = Phaser.Math.Angle.Between(behind.x, behind.y, ahead.x, ahead.y);
+      const pose = enemyMotionPose(enemy.type, this.simTime, enemy.motionSeed, heading, slow > 0, this.reduceMotion);
+      const laneX = -Math.sin(heading) * enemy.laneOffset;
+      const laneY = Math.cos(heading) * enemy.laneOffset;
+      enemy.container.setPosition(point.x + laneX, point.y + laneY + (definition.flying ? -13 : 0));
+      const hitPulse = enemy.hitPulseUntil > this.simTime ? 1.08 : 1;
+      enemy.sprite.setPosition(0, enemy.spriteBaseY + pose.bob).setRotation(pose.rotation)
+        .setScale(enemy.spriteBaseScale * pose.scaleX * hitPulse, enemy.spriteBaseScale * pose.scaleY * hitPulse);
+      enemy.art.setScale(pose.shadowScale, 1).setAlpha(pose.shadowAlpha / 0.62);
+      if (this.hero.alive && !definition.flying && distance(enemy.container, this.hero) < definition.radius + 24 && this.simTime >= enemy.contactCooldown) {
         enemy.contactCooldown = this.simTime + 700;
         const shieldMultiplier = this.hero.sealUntil > this.simTime ? 0.4 : 1;
         const bossContactDamage = enemy.type === 'warden' ? 30 : enemy.type === 'titan' ? 46 : enemy.type === 'boss' ? 64 : 13;
@@ -898,8 +943,23 @@ export class GameScene extends Phaser.Scene {
       this.updateHeroLevel();
     }
     if (!this.reduceMotion) {
-      const ghost = this.add.image(enemy.container.x, enemy.container.y - 16, 'unit-art', enemy.sprite.frame.name).setScale(enemy.sprite.scaleX).setTint(0xd9a4ff).setDepth(28);
-      this.tweens.add({ targets: ghost, y: ghost.y - 24, angle: Phaser.Math.Between(-12, 12), alpha: 0, scale: enemy.sprite.scaleX * 1.2, duration: 320, ease: 'Cubic.out', onComplete: () => ghost.destroy() });
+      const ghost = this.add.image(enemy.container.x, enemy.container.y + enemy.spriteBaseY, 'unit-motion-art', enemy.sprite.frame.name)
+        .setScale(Math.abs(enemy.sprite.scaleX), enemy.sprite.scaleY).setRotation(enemy.sprite.rotation).setTint(0xd9a4ff).setDepth(28);
+      this.tweens.add({
+        targets: ghost, y: ghost.y - 28, angle: Phaser.Math.Between(-10, 10), alpha: 0,
+        scaleX: Math.abs(enemy.sprite.scaleX) * 1.16, scaleY: enemy.sprite.scaleY * 0.82,
+        duration: 380, ease: 'Cubic.out', onComplete: () => ghost.destroy(),
+      });
+      const collapse = this.add.graphics().setPosition(enemy.container.x, enemy.container.y).setDepth(27);
+      for (let index = 0; index < 7; index += 1) {
+        const angle = index / 7 * Math.PI * 2;
+        collapse.fillStyle(index % 2 ? 0xc365ff : 0x5d2b86, 0.82).fillTriangle(
+          Math.cos(angle) * 8, Math.sin(angle) * 5,
+          Math.cos(angle) * 16 - 3, Math.sin(angle) * 11 + 4,
+          Math.cos(angle) * 16 + 3, Math.sin(angle) * 11 - 4,
+        );
+      }
+      this.tweens.add({ targets: collapse, scale: 1.8, angle: 28, alpha: 0, duration: 340, onComplete: () => collapse.destroy() });
     }
     enemy.container.destroy(true);
     emit('td:sound', 'death');
@@ -930,23 +990,43 @@ export class GameScene extends Phaser.Scene {
       const boosted = this.towers.some((candidate) => candidate.type === 'boost' && distance(tower, candidate) <= TOWERS.boost.levels[candidate.level - 1].range);
       const sealed = this.hero.sealUntil > this.simTime && distance(tower, this.hero) <= 240;
       const multiplier = (boosted ? 1.25 : 1) * (sealed ? 1.35 : 1) * (TEST_MODE ? 3 : 1);
-      this.fireProjectile(tower, target, level.damage * multiplier, definition.splash, definition.slow);
+      const kind = tower.type as OffensiveTowerType;
+      this.fireProjectile(
+        tower, target, level.damage * multiplier, definition.splash, definition.slow,
+        kind, tower.level, level.projectileScale, level.projectileCount,
+      );
+      animateTowerFire(this, tower.sprite, kind, tower.level, this.reduceMotion);
+      emit('td:sound', kind === 'archer' ? 'arrow' : kind === 'frost' ? 'frost' : 'cannon');
       tower.nextAttackAt = this.simTime + level.attackMs / (boosted ? 1.12 : 1);
     }
   }
 
-  private fireProjectile(tower: TowerUnit, target: EnemyUnit, damage: number, splash: number, slow: number): void {
-    const color = TOWERS[tower.type].color;
-    const view = this.add.circle(tower.x, tower.y - 10, tower.type === 'siege' ? 7 : 4, color).setDepth(30);
-    this.projectiles.push({ view, target, source: tower, damage, speed: tower.type === 'siege' ? 360 : 620, splash, slow, color });
-    emit('td:sound', 'shot');
+  private fireProjectile(
+    tower: TowerUnit,
+    target: EnemyUnit,
+    damage: number,
+    splash: number,
+    slow: number,
+    kind: OffensiveTowerType,
+    level: number,
+    scale: number,
+    count: number,
+  ): void {
+    const angle = Phaser.Math.Angle.Between(tower.x, tower.y - 12, target.container.x, target.container.y);
+    const view = createProjectileVisual(this, kind, level, scale, count, tower.x, tower.y - 12);
+    view.setRotation(angle);
+    this.projectiles.push({
+      view, target, source: tower, damage,
+      speed: kind === 'siege' ? 360 : 620,
+      splash, slow, kind, level,
+    });
   }
 
   private updateProjectiles(delta: number): void {
     for (let index = this.projectiles.length - 1; index >= 0; index -= 1) {
       const projectile = this.projectiles[index];
       if (!projectile.target.alive) {
-        projectile.view.destroy();
+        projectile.view.destroy(true);
         this.projectiles.splice(index, 1);
         continue;
       }
@@ -955,12 +1035,14 @@ export class GameScene extends Phaser.Scene {
       const travel = projectile.speed * delta / 1000;
       if (remaining <= travel + 4) {
         this.impactProjectile(projectile);
-        projectile.view.destroy();
+        projectile.view.destroy(true);
         this.projectiles.splice(index, 1);
       } else {
         const angle = Phaser.Math.Angle.Between(projectile.view.x, projectile.view.y, target.x, target.y);
         projectile.view.x += Math.cos(angle) * travel;
         projectile.view.y += Math.sin(angle) * travel;
+        projectile.view.setRotation(angle);
+        if (projectile.kind === 'frost') projectile.view.angle += delta * 0.16;
       }
     }
   }
@@ -979,20 +1061,8 @@ export class GameScene extends Phaser.Scene {
         enemy.slowUntil = this.simTime + 2200;
       }
     });
-    const burst = this.add.circle(center.x, center.y, 8, projectile.color, 0.7).setDepth(29);
-    const duration = this.reduceMotion ? 70 : 220;
-    this.tweens.add({ targets: burst, scale: 3.5, alpha: 0, duration, onComplete: () => burst.destroy() });
-    if (!this.reduceMotion) {
-      for (let index = 0; index < 6; index += 1) {
-        const angle = (index / 6) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.2, 0.2);
-        const shard = this.add.circle(center.x, center.y, 2.5, projectile.color, 0.9).setDepth(30);
-        this.tweens.add({
-          targets: shard, x: center.x + Math.cos(angle) * Phaser.Math.Between(18, 42), y: center.y + Math.sin(angle) * Phaser.Math.Between(18, 42),
-          alpha: 0, scale: 0.2, duration: Phaser.Math.Between(180, 320), onComplete: () => shard.destroy(),
-        });
-      }
-      if (projectile.splash >= 70 && this.screenShake) this.cameras.main.shake(90, 0.0025);
-    }
+    createProjectileImpact(this, projectile.kind, projectile.level, center.x, center.y, this.reduceMotion);
+    if (!this.reduceMotion && projectile.kind === 'siege' && this.screenShake) this.cameras.main.shake(75 + projectile.level * 25, 0.0015 + projectile.level * 0.00065);
     emit('td:sound', 'hit');
   }
 
@@ -1002,6 +1072,7 @@ export class GameScene extends Phaser.Scene {
     const shield = this.isBossType(enemy.type) && enemy.shieldUntil > this.simTime ? 0.3 : 1;
     const outcome = damageOutcome(enemy.hp, rawDamage, armor, shield);
     enemy.hp = outcome.hp;
+    enemy.hitPulseUntil = this.simTime + (this.reduceMotion ? 45 : 115);
     this.drawEnemyHealth(enemy);
     if (outcome.dealt > 0) {
       enemy.sprite.setTint(magic ? 0xd8fbff : 0xffe8b0);
@@ -1323,7 +1394,8 @@ export class GameScene extends Phaser.Scene {
         sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description,
         damage: selectedLevel.damage * (selectedBoosted ? 1.25 : 1),
         attacksPerSecond: selectedLevel.attackMs > 0 ? 1000 / selectedLevel.attackMs * (selectedBoosted ? 1.12 : 1) : 0,
-        range: selectedLevel.range, damageDealt: selected.damageDealt, kills: selected.kills, boosted: selectedBoosted, auraTargets,
+        range: selectedLevel.range, projectileCount: selectedLevel.projectileCount,
+        damageDealt: selected.damageDealt, kills: selected.kills, boosted: selectedBoosted, auraTargets,
       } : null,
       hero: {
         x: this.hero.x, y: this.hero.y, hp: Math.max(0, this.hero.hp), maxHp: HERO.maxHp, mana: this.hero.mana, maxMana: HERO.maxMana, xp: this.hero.xp,

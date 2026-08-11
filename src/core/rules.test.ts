@@ -4,7 +4,7 @@ import {
   matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
-import { DIFFICULTIES, ENEMIES, WAVES } from './config';
+import { DIFFICULTIES, ENEMIES, TOWERS, WAVES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -12,6 +12,18 @@ const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext 
   gold: 200, cost: 100, path: [{ x: 20, y: 100 }, { x: 480, y: 100 }], pathHalfWidth: 25,
   crystal: { x: 450, y: 350 }, crystalRadius: 35, forbidden: [{ x: 330, y: 220, radius: 35 }],
   towers: [{ x: 100, y: 220, radius: 20 }], ...overrides,
+});
+
+describe('визуальная эволюция башен', () => {
+  it('увеличивает число стрел и ледяных осколков на каждом уровне', () => {
+    expect(TOWERS.archer.levels.map((level) => level.projectileCount)).toEqual([1, 2, 3]);
+    expect(TOWERS.frost.levels.map((level) => level.projectileCount)).toEqual([1, 2, 3]);
+  });
+
+  it('делает осадное ядро тяжелее без скрытого умножения числа попаданий', () => {
+    expect(TOWERS.siege.levels.map((level) => level.projectileCount)).toEqual([1, 1, 1]);
+    expect(TOWERS.siege.levels.map((level) => level.projectileScale)).toEqual([0.92, 1.18, 1.52]);
+  });
 });
 
 describe('боевые формулы', () => {
@@ -25,6 +37,19 @@ describe('боевые формулы', () => {
     expect(damageOutcome(50, 100, 0)).toEqual({ dealt: 50, hp: 0, killed: true });
     expect(damageOutcome(100, 100, 0, 0.3)).toEqual({ dealt: 30, hp: 70, killed: false });
     expect(damageOutcome(0, 100, 0)).toEqual({ dealt: 0, hp: 0, killed: false });
+  });
+
+  it('сохраняет суммарный урон залпа при одинаковой броне каждого снаряда', () => {
+    const single = damageOutcome(100, 60, 30);
+    let hp = 100;
+    let dealt = 0;
+    for (let projectile = 0; projectile < 3; projectile += 1) {
+      const hit = damageOutcome(hp, 60 / 3, 30);
+      hp = hit.hp;
+      dealt += hit.dealt;
+    }
+    expect(hp).toBeCloseTo(single.hp);
+    expect(dealt).toBeCloseTo(single.dealt);
   });
 
   it('ограничивает замедление безопасным максимумом', () => {

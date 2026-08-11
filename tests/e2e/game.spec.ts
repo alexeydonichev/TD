@@ -278,6 +278,47 @@ test('инспектор башни показывает характерист�
   await expect(page.locator('#tower-boosted')).toBeVisible();
 });
 
+test('каждый уровень меняет боеприпас и залп башни', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => consoleErrors.push(error.message));
+
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  const canvas = page.locator('canvas');
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
+  await page.locator('#zoom-out').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 2)).toBeLessThanOrEqual(1.01);
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Canvas has no bounding box');
+  const clickWorld = async (x: number, y: number) => page.mouse.click(box.x + box.width * (x / 1200), box.y + box.height * (y / 700));
+
+  for (const [type, x, y, levelOne, levelThree] of [
+    ['archer', 350, 250, 'залп: 1 стрела', 'залп: 3 стрелы'],
+    ['frost', 600, 250, 'залп: 1 осколок', 'залп: 3 осколка'],
+    ['siege', 650, 450, 'ядро: размер 1', 'ядро: размер 3'],
+  ] as const) {
+    await page.locator(`[data-tower="${type}"]`).click();
+    await clickWorld(x, y);
+    await expect(page.locator('#tower-description')).toContainText(levelOne);
+    await page.locator('#upgrade').click();
+    await page.locator('#upgrade').click();
+    await expect(page.locator('#tower-level')).toHaveText('3');
+    await expect(page.locator('#tower-description')).toContainText(levelThree);
+  }
+
+  await clickWorld(350, 250);
+  await expect(page.locator('#tower-name')).toHaveText('Стрелковая башня');
+  await page.locator('#start-wave').click();
+  await page.evaluate(() => window.__TD_TEST__?.spawnStress(12));
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().selectedTower?.damageDealt ?? 0), { timeout: 10_000 }).toBeGreaterThan(0);
+  await page.waitForTimeout(750);
+  await page.screenshot({ path: 'test-results/combat-visual-upgrade.png', fullPage: true });
+  expect(consoleErrors).toEqual([]);
+});
+
 test('профиль держит 100 активных противников без утечки объектов', async ({ page }) => {
   await page.goto('/?test=1');
   await page.locator('#begin').click();

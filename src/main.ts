@@ -423,7 +423,11 @@ function renderTowerPanel(state: HudState): void {
   panel.classList.toggle('hidden', !state.selectedTower);
   if (!state.selectedTower) return;
   get('tower-name').textContent = state.selectedTower.name;
-  get('tower-description').textContent = state.selectedTower.description;
+  const volley = state.selectedTower.type === 'boost' ? ''
+    : state.selectedTower.type === 'archer' ? ` · залп: ${state.selectedTower.projectileCount} ${state.selectedTower.projectileCount === 1 ? 'стрела' : 'стрелы'}`
+      : state.selectedTower.type === 'frost' ? ` · залп: ${state.selectedTower.projectileCount} ${state.selectedTower.projectileCount === 1 ? 'осколок' : 'осколка'}`
+        : ` · ядро: размер ${state.selectedTower.level}`;
+  get('tower-description').textContent = `${state.selectedTower.description}${volley}`;
   get('tower-level').textContent = String(state.selectedTower.level);
   const support = state.selectedTower.type === 'boost';
   const targetMode = get<HTMLButtonElement>('target-mode');
