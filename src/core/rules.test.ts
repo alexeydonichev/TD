@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, earlyStartBonus, isWaveComplete, loseLives,
-  matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, upgrade,
-  waveHpMultiplier, waveRoster, waveSpeedMultiplier,
+  matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
+  waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
 import { DIFFICULTIES, ENEMIES, WAVES } from './config';
 import type { PlacementContext } from './types';
@@ -50,6 +50,11 @@ describe('строительство и экономика', () => {
     expect(canPlaceTower(placement())).toBe(true);
     expect(buy(200, 100)).toEqual({ ok: true, gold: 100 });
     expect(buy(50, 100)).toEqual({ ok: false, gold: 50 });
+  });
+
+  it('привязывает строительство к видимой сетке и удерживает край карты', () => {
+    expect(snapToGrid({ x: 374, y: 226 }, 50, 50, 50, 1150, 650)).toEqual({ x: 350, y: 250 });
+    expect(snapToGrid({ x: -20, y: 900 }, 50, 50, 50, 1150, 650)).toEqual({ x: 50, y: 650 });
   });
 
   it.each([
@@ -149,6 +154,7 @@ describe('режимы сложности', () => {
     expect(DIFFICULTIES.standard).toMatchObject({
       heroDamage: 1, heroSpeed: 1, heroManaRegen: 1, heroDamageTaken: 1,
       heroRespawn: 1, intermission: 1, bossShield: 1, earlyStartGold: 1,
+      lateEnemyReward: 1, waveReward: 1, waveHpGrowth: 1, waveSpeedGrowth: 1,
     });
     expect(DIFFICULTIES.story.heroDamage).toBeGreaterThan(1);
     expect(DIFFICULTIES.story.heroDamageTaken).toBeLessThan(1);
@@ -164,6 +170,8 @@ describe('режимы сложности', () => {
     expect(waveHpMultiplier(20)).toBeCloseTo(1.475);
     expect(waveSpeedMultiplier(20)).toBeCloseTo(1.152);
     expect(waveHpMultiplier(100)).toBeCloseTo(1.475);
+    expect(waveHpMultiplier(20, DIFFICULTIES.rift.waveHpGrowth)).toBeGreaterThan(waveHpMultiplier(20));
+    expect(waveSpeedMultiplier(20, DIFFICULTIES.story.waveSpeedGrowth)).toBeLessThan(waveSpeedMultiplier(20));
   });
 
   it('сюжетный режим ослабляет врага и повышает награду', () => {
@@ -174,9 +182,31 @@ describe('режимы сложности', () => {
   });
 
   it('Разлом усиливает здоровье и скорость, сохраняя положительную награду', () => {
-    const scaled = scaleEnemy(ENEMIES.brute, DIFFICULTIES.rift);
+    const scaled = scaleEnemy(ENEMIES.brute, DIFFICULTIES.rift, 20);
     expect(scaled.maxHp).toBeGreaterThan(ENEMIES.brute.maxHp);
     expect(scaled.speed).toBeGreaterThan(ENEMIES.brute.speed);
     expect(scaled.reward).toBeGreaterThan(0);
+  });
+
+  it('режим Разлома не допускает денежный снежный ком к финалу', () => {
+    const campaignIncome = WAVES.reduce((sum, wave, index) => {
+      const killIncome = wave.spawns.reduce((waveSum, spawn) => (
+        waveSum + spawn.count * scaleEnemy(ENEMIES[spawn.type], DIFFICULTIES.rift, index + 1).reward
+      ), 0);
+      return sum + killIncome + waveClearReward(wave.reward, DIFFICULTIES.rift);
+    }, DIFFICULTIES.rift.startingGold);
+    const standardIncome = WAVES.reduce((sum, wave, index) => {
+      const killIncome = wave.spawns.reduce((waveSum, spawn) => (
+        waveSum + spawn.count * scaleEnemy(ENEMIES[spawn.type], DIFFICULTIES.standard, index + 1).reward
+      ), 0);
+      return sum + killIncome + waveClearReward(wave.reward, DIFFICULTIES.standard);
+    }, DIFFICULTIES.standard.startingGold);
+
+    expect(campaignIncome).toBeGreaterThan(9_000);
+    expect(campaignIncome).toBeLessThan(10_500);
+    expect(campaignIncome / standardIncome).toBeLessThan(0.58);
+    expect(scaleEnemy(ENEMIES.raider, DIFFICULTIES.rift, 20).reward)
+      .toBeLessThan(scaleEnemy(ENEMIES.raider, DIFFICULTIES.rift, 1).reward);
+    expect(waveClearReward(WAVES[19].reward, DIFFICULTIES.rift)).toBe(160);
   });
 });

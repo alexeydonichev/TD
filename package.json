@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "proof:balance": "node scripts/prove-balance.mjs",
     "proof:control": "TD_STRATEGY=control node scripts/prove-balance.mjs",
+    "proof:rift": "TD_DIFFICULTY=rift node scripts/prove-balance.mjs",
     "profile:80": "node scripts/profile-80.mjs",
     "build": "tsc --noEmit && vite build",
     "check:bundle": "node scripts/check-bundle.mjs",

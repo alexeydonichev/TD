@@ -1,6 +1,6 @@
 import './style.css';
 import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, TOWERS, WAVES } from './core/config';
-import { earlyStartBonus, waveRoster } from './core/rules';
+import { earlyStartBonus, waveClearReward, waveRoster } from './core/rules';
 import type { Difficulty, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
 import { emit, on } from './game/bus';
@@ -33,13 +33,17 @@ app.innerHTML = `
       <button id="zoom-in" class="icon-button" title="Приблизить карту" aria-label="Приблизить карту">+</button>
     </nav>
 
-    <aside class="wave-card glass">
-      <div id="wave-kicker" class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА</div>
-      <h2 id="wave-title">Разведчики Разлома</h2>
-      <p id="wave-intel">Налётчики · наземные</p>
-      <div id="wave-roster" class="wave-roster" role="list" aria-label="Состав следующей волны"></div>
+    <aside id="wave-card" class="wave-card glass">
+      <div class="wave-card-header">
+        <div><div id="wave-kicker" class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА · ВОЛНА 1</div><h2 id="wave-title">Разведчики Разлома</h2></div>
+        <button id="wave-toggle" class="icon-button" aria-expanded="true" aria-controls="wave-details" title="Свернуть сведения об угрозе">⌄</button>
+      </div>
+      <div id="wave-details" class="wave-card-details">
+        <p id="wave-intel">Налётчики · наземные</p>
+        <div id="wave-roster" class="wave-roster" role="list" aria-label="Состав следующей волны"></div>
+        <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
+      </div>
       <div class="wave-economy"><span id="wave-size"></span><span id="wave-reward"></span></div>
-      <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
       <div class="wave-row"><span id="countdown">00:12</span><button id="start-wave" class="primary">Начать досрочно <kbd>+золото</kbd></button></div>
     </aside>
 
@@ -170,7 +174,19 @@ let gameLoad: Promise<void> | null = null;
 let selectedDifficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
 const isTestMode = new URLSearchParams(window.location.search).get('test') === '1';
 let lastAnnouncedWave = -1;
-let lastBriefedWave = -1;
+let lastBriefedWave = '';
+
+function setWaveCardCollapsed(collapsed: boolean): void {
+  const card = get('wave-card');
+  const toggle = get<HTMLButtonElement>('wave-toggle');
+  card.classList.toggle('collapsed', collapsed);
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.textContent = collapsed ? '⌃' : '⌄';
+  toggle.title = collapsed ? 'Развернуть сведения об угрозе' : 'Свернуть сведения об угрозе';
+  localStorage.setItem('rift-wave-card-collapsed', collapsed ? 'yes' : 'no');
+}
+
+setWaveCardCollapsed(localStorage.getItem('rift-wave-card-collapsed') !== 'no');
 
 async function ensureGame(): Promise<void> {
   if (gameLoad) return gameLoad;
@@ -200,6 +216,7 @@ get<HTMLButtonElement>('begin').addEventListener('click', async () => {
   if (!isTestMode && localStorage.getItem('rift-tutorial-seen') !== 'yes') showTutorial(0);
 });
 get<HTMLButtonElement>('start-wave').addEventListener('click', () => emit('td:action', { type: 'start-wave' }));
+get<HTMLButtonElement>('wave-toggle').addEventListener('click', () => setWaveCardCollapsed(!get('wave-card').classList.contains('collapsed')));
 get<HTMLButtonElement>('pause').addEventListener('click', () => emit('td:action', { type: 'pause' }));
 get<HTMLButtonElement>('speed').addEventListener('click', () => emit('td:action', { type: 'speed' }));
 get<HTMLButtonElement>('zoom-out').addEventListener('click', () => emit('td:action', { type: 'zoom', direction: 'out' }));
@@ -332,7 +349,7 @@ function renderHud(state: HudState): void {
   get('wave-title').textContent = state.waveTitle;
   get('wave-intel').textContent = state.waveIntel;
   const hintedWave = Math.max(1, state.waveActive ? state.wave : state.wave + 1);
-  renderWaveBriefing(hintedWave, state.waveActive);
+  renderWaveBriefing(hintedWave, state.waveActive, state.difficulty);
   get('strategy-hint').textContent = strategyHint(hintedWave);
   get('countdown').textContent = state.waveActive ? 'ИДЁТ ВОЛНА' : `00:${Math.ceil(state.countdown).toString().padStart(2, '0')}`;
   get<HTMLButtonElement>('start-wave').disabled = state.waveActive || state.wave >= state.totalWaves || state.result !== 'playing';
@@ -342,7 +359,7 @@ function renderHud(state: HudState): void {
   get('speed').textContent = `×${state.speed}`;
   get('zoom-reset').textContent = `${Math.round(state.cameraZoom * 100)}%`;
   get('pause-label').classList.toggle('hidden', !state.paused);
-  get('placement-message').textContent = state.placementMessage || 'Выберите башню';
+  get('placement-message').textContent = state.buildType ? `${state.placementMessage} · ячейки 50×50` : state.placementMessage || 'Выберите башню';
   document.querySelectorAll<HTMLButtonElement>('[data-tower]').forEach((button) => button.classList.toggle('active', button.dataset.tower === state.buildType));
   renderTowerPanel(state);
   renderHero(state);
@@ -359,11 +376,12 @@ function renderHud(state: HudState): void {
   if (tutorialStep === 4 && (state.selectedTower?.level ?? 0) > 1) showTutorial(-1);
 }
 
-function renderWaveBriefing(waveNumber: number, active: boolean): void {
-  get('wave-kicker').textContent = active ? 'ВОЛНА В БОЮ' : 'СЛЕДУЮЩАЯ УГРОЗА';
+function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Difficulty): void {
+  get('wave-kicker').textContent = active ? `ВОЛНА ${waveNumber} В БОЮ` : `СЛЕДУЮЩАЯ УГРОЗА · ВОЛНА ${waveNumber}`;
   const wave = WAVES[Math.min(WAVES.length - 1, Math.max(0, waveNumber - 1))];
-  if (!wave || lastBriefedWave === waveNumber) return;
-  lastBriefedWave = waveNumber;
+  const briefingKey = `${waveNumber}-${difficulty}`;
+  if (!wave || lastBriefedWave === briefingKey) return;
+  lastBriefedWave = briefingKey;
   const roster = waveRoster(wave.spawns);
   const total = roster.reduce((sum, entry) => sum + entry.count, 0);
   const rosterElement = get('wave-roster');
@@ -375,7 +393,7 @@ function renderWaveBriefing(waveNumber: number, active: boolean): void {
   }).join('');
   rosterElement.setAttribute('aria-label', `Состав волны ${waveNumber}: ${roster.map(({ type, count }) => `${ENEMIES[type].name}, ${count}`).join('; ')}`);
   get('wave-size').textContent = `${total} ${enemyCountLabel(total)}`;
-  get('wave-reward').textContent = `Зачистка +◈ ${wave.reward}`;
+  get('wave-reward').textContent = `Зачистка +◈ ${waveClearReward(wave.reward, DIFFICULTIES[difficulty])}`;
 }
 
 function enemyCountLabel(count: number): string {

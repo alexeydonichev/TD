@@ -1,11 +1,11 @@
 import Phaser from 'phaser';
 import {
-  CRYSTAL, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
+  BUILD_GRID_PADDING, BUILD_GRID_SIZE, CRYSTAL, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
   INTERMISSION_SECONDS, PATH, TOWERS, WAVES,
 } from '../core/config';
 import {
-  applySlow, chainTargets, damageOutcome, dashDestination, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy,
-  selectTarget, sellValue, waveHpMultiplier, waveSpeedMultiplier,
+  applySlow, chainTargets, damageOutcome, dashDestination, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy, snapToGrid,
+  selectTarget, sellValue, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
 import type { Difficulty, EnemyType, HeroStance, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
@@ -118,6 +118,8 @@ export interface HudState {
   placementMessage: string;
   selectedTower: null | {
     type: TowerType;
+    x: number;
+    y: number;
     name: string;
     level: number;
     mode: string;
@@ -178,6 +180,7 @@ export class GameScene extends Phaser.Scene {
   private buildType: TowerType | null = null;
   private selectedTower: TowerUnit | null = null;
   private placementMessage = '';
+  private buildGrid!: Phaser.GameObjects.Graphics;
   private preview!: Phaser.GameObjects.Graphics;
   private selectionRing!: Phaser.GameObjects.Graphics;
   private heroTargetMarker!: Phaser.GameObjects.Graphics;
@@ -213,6 +216,7 @@ export class GameScene extends Phaser.Scene {
     this.buildRouteCache();
     this.drawMap();
     this.createAtmosphere();
+    this.buildGrid = this.add.graphics().setDepth(14);
     this.preview = this.add.graphics().setDepth(40);
     this.selectionRing = this.add.graphics().setDepth(35);
     this.heroTargetMarker = this.add.graphics().setDepth(13);
@@ -587,31 +591,60 @@ export class GameScene extends Phaser.Scene {
     this.selectedTower = null;
     this.placementMessage = type ? `Выбрано: ${TOWERS[type].name}` : '';
     this.drawSelection();
+    this.drawBuildGrid(type);
     if (!type) this.preview.clear();
     this.emitHud(true);
   }
 
-  private placementContext(point: Point, type: TowerType) {
+  private placementContext(point: Point, type: TowerType, gold = this.gold) {
     return {
       point, mapWidth: GAME_WIDTH, mapHeight: GAME_HEIGHT, edgePadding: 36, towerRadius: 24,
-      gold: this.gold, cost: TOWERS[type].cost, path: PATH, pathHalfWidth: 34, crystal: CRYSTAL, crystalRadius: 52,
+      gold, cost: TOWERS[type].cost, path: PATH, pathHalfWidth: 34, crystal: CRYSTAL, crystalRadius: 52,
       forbidden: FORBIDDEN_ZONES, towers: this.towers.map((tower) => ({ x: tower.x, y: tower.y, radius: 24 })),
     };
+  }
+
+  private gridPoint(point: Point): Point {
+    return snapToGrid(
+      point, BUILD_GRID_SIZE,
+      BUILD_GRID_PADDING, BUILD_GRID_PADDING,
+      GAME_WIDTH - BUILD_GRID_PADDING, GAME_HEIGHT - BUILD_GRID_PADDING,
+    );
+  }
+
+  private drawBuildGrid(type: TowerType | null): void {
+    const grid = this.buildGrid.clear();
+    if (!type) return;
+    const color = TOWERS[type].color;
+    for (let y = BUILD_GRID_PADDING; y <= GAME_HEIGHT - BUILD_GRID_PADDING; y += BUILD_GRID_SIZE) {
+      for (let x = BUILD_GRID_PADDING; x <= GAME_WIDTH - BUILD_GRID_PADDING; x += BUILD_GRID_SIZE) {
+        const available = placementFailure(this.placementContext({ x, y }, type, Number.MAX_SAFE_INTEGER)) === null;
+        if (available) {
+          grid.fillStyle(color, 0.13).fillRect(x - 17, y - 17, 34, 34)
+            .lineStyle(1, color, 0.28).strokeRect(x - 17, y - 17, 34, 34)
+            .fillStyle(0xf6df9b, 0.6).fillCircle(x, y, 2.5);
+        } else {
+          grid.fillStyle(0x756b82, 0.1).fillCircle(x, y, 1.5);
+        }
+      }
+    }
   }
 
   private drawPlacementPreview(pointer: Phaser.Input.Pointer): void {
     if (!this.buildType) return;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    const valid = placementFailure(this.placementContext(world, this.buildType)) === null;
+    const point = this.gridPoint(world);
+    const valid = placementFailure(this.placementContext(point, this.buildType)) === null;
     const definition = TOWERS[this.buildType];
-    this.preview.clear().fillStyle(valid ? 0x52ff8a : 0xff526b, 0.18).fillCircle(world.x, world.y, definition.levels[0].range)
-      .lineStyle(2, valid ? 0x74ff9f : 0xff6c7d, 0.85).strokeCircle(world.x, world.y, 24)
-      .fillStyle(definition.color, 0.75).fillCircle(world.x, world.y, 17);
+    this.preview.clear().fillStyle(valid ? 0x52ff8a : 0xff526b, 0.18).fillCircle(point.x, point.y, definition.levels[0].range)
+      .lineStyle(3, valid ? 0x74ff9f : 0xff6c7d, 0.95).strokeRect(point.x - 21, point.y - 21, 42, 42)
+      .fillStyle(definition.color, 0.78).fillCircle(point.x, point.y, 17);
   }
 
   private placeTower(point: Point): void {
     if (!this.buildType || this.result !== 'playing') return;
-    const failure = placementFailure(this.placementContext(point, this.buildType));
+    const snapped = this.gridPoint(point);
+    const failure = placementFailure(this.placementContext(snapped, this.buildType));
     const messages: Record<string, string> = { outside: 'За пределами карты', path: 'Нельзя строить на маршруте', crystal: 'Кристалл должен быть свободен', forbidden: 'Запретная декоративная зона', occupied: 'Место уже занято', gold: 'Недостаточно золота' };
     if (failure) {
       this.placementMessage = messages[failure];
@@ -624,17 +657,19 @@ export class GameScene extends Phaser.Scene {
     const art = this.add.graphics();
     const frame = { archer: 0, frost: 1, siege: 2, boost: 3 }[this.buildType];
     const sprite = this.add.image(0, -13, 'tower-art', frame).setScale(0.105);
-    const container = this.add.container(point.x, point.y, [art, sprite]).setDepth(15);
+    const container = this.add.container(snapped.x, snapped.y, [art, sprite]).setDepth(15);
     container.setSize(52, 52).setInteractive(new Phaser.Geom.Circle(0, 0, 28), Phaser.Geom.Circle.Contains);
     container.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation();
       this.selectedTower = this.towers.find((tower) => tower.container === container) ?? null;
       this.buildType = null;
+      this.buildGrid.clear();
+      this.preview.clear();
       this.drawSelection();
       this.emitHud(true);
     });
     const tower: TowerUnit = {
-      id: this.nextId++, type: this.buildType, x: point.x, y: point.y, level: 1, targetMode: 'first', nextAttackAt: 0,
+      id: this.nextId++, type: this.buildType, x: snapped.x, y: snapped.y, level: 1, targetMode: 'first', nextAttackAt: 0,
       paidUpgrades: [], damageDealt: 0, kills: 0, container, art, sprite,
     };
     this.towers.push(tower);
@@ -642,6 +677,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.reduceMotion) this.tweens.add({ targets: sprite, scaleX: 0.118, scaleY: 0.118, duration: 180, yoyo: true, ease: 'Back.out' });
     this.selectedTower = tower;
     this.buildType = null;
+    this.buildGrid.clear();
     this.preview.clear();
     this.drawSelection();
     emit('td:sound', 'build');
@@ -740,7 +776,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.spawnQueue.length && !this.enemies.some((enemy) => enemy.alive)) {
       this.waveActive = false;
-      this.gold += WAVES[this.currentWave - 1].reward;
+      this.gold += waveClearReward(WAVES[this.currentWave - 1].reward, DIFFICULTIES[this.difficulty]);
       this.score += Math.round((350 + this.currentWave * 40) * DIFFICULTIES[this.difficulty].scoreMultiplier);
       if (this.currentWave >= WAVES.length) this.finish('victory');
       else this.countdown = TEST_MODE ? 0.55 : INTERMISSION_SECONDS * DIFFICULTIES[this.difficulty].intermission;
@@ -756,7 +792,7 @@ export class GameScene extends Phaser.Scene {
     const sprite = this.add.image(0, this.isBossType(type) ? -28 : -18, 'unit-art', frame).setScale(spriteScale);
     const hpBar = this.add.graphics();
     const container = this.add.container(position.x, position.y, [art, sprite, hpBar]).setDepth(type === 'winged' ? 25 : 16);
-    const maxHp = definition.maxHp * waveHpMultiplier(this.currentWave) * ENEMY_HP_SCALE;
+    const maxHp = definition.maxHp * waveHpMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveHpGrowth) * ENEMY_HP_SCALE;
     const enemy: EnemyUnit = {
       id: this.nextId++, type, hp: maxHp, maxHp, progress, alive: true, slow: 0, slowUntil: 0, phase: 1,
       shieldUntil: 0, lastShieldAt: this.simTime, summonedPhase: false, contactCooldown: 0, container, art, sprite, hpBar,
@@ -828,7 +864,7 @@ export class GameScene extends Phaser.Scene {
       }
       const slow = enemy.slowUntil > this.simTime ? enemy.slow : 0;
       const phaseMultiplier = this.isBossType(enemy.type) && enemy.phase === 2 ? 1.28 : 1;
-      enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave) * ENEMY_SPEED_SCALE * phaseMultiplier, slow) * delta / 1000;
+      enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE * phaseMultiplier, slow) * delta / 1000;
       const point = this.pointAtProgress(enemy.progress);
       enemy.container.setPosition(point.x, point.y + (definition.flying ? -18 + Math.sin(this.simTime / 120) * 5 : 0));
       if (this.hero.alive && !definition.flying && distance(point, this.hero) < definition.radius + 24 && this.simTime >= enemy.contactCooldown) {
@@ -1221,7 +1257,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private enemyDefinition(type: EnemyType) {
-    return scaleEnemy(ENEMIES[type], DIFFICULTIES[this.difficulty]);
+    return scaleEnemy(ENEMIES[type], DIFFICULTIES[this.difficulty], Math.max(1, this.currentWave));
   }
 
   private isBossType(type: EnemyType): boolean {
@@ -1282,7 +1318,7 @@ export class GameScene extends Phaser.Scene {
       paused: this.paused, speed: this.speed, difficulty: this.difficulty, difficultyName: DIFFICULTIES[this.difficulty].name,
       score: this.score, towerCount: this.towers.length, buildType: this.buildType, placementMessage: this.placementMessage,
       selectedTower: selected && definition && selectedLevel ? {
-        type: selected.type, name: definition.name, level: selected.level, mode: selected.targetMode === 'first' ? 'Первая по пути' : 'Самая сильная',
+        type: selected.type, x: selected.x, y: selected.y, name: definition.name, level: selected.level, mode: selected.targetMode === 'first' ? 'Первая по пути' : 'Самая сильная',
         nextCost: definition.levels[selected.level - 1].upgradeCost,
         sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description,
         damage: selectedLevel.damage * (selectedBoosted ? 1.25 : 1),

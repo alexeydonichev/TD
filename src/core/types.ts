@@ -12,6 +12,10 @@ export interface DifficultyDefinition {
   enemyHp: number;
   enemySpeed: number;
   enemyReward: number;
+  lateEnemyReward: number;
+  waveReward: number;
+  waveHpGrowth: number;
+  waveSpeedGrowth: number;
   startingGold: number;
   crystalLives: number;
   scoreMultiplier: number;

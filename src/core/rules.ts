@@ -6,6 +6,14 @@ export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+export function snapToGrid(point: Point, size: number, minX = 0, minY = 0, maxX = Infinity, maxY = Infinity): Point {
+  const safeSize = Math.max(1, size);
+  return {
+    x: Math.max(minX, Math.min(maxX, Math.round(point.x / safeSize) * safeSize)),
+    y: Math.max(minY, Math.min(maxY, Math.round(point.y / safeSize) * safeSize)),
+  };
+}
+
 function pointSegmentDistance(point: Point, start: Point, end: Point): number {
   const lengthSquared = (end.x - start.x) ** 2 + (end.y - start.y) ** 2;
   if (lengthSquared === 0) return distance(point, start);
@@ -75,6 +83,14 @@ export function earlyStartBonus(seconds: number, goldPerSecond: number): number 
   return Math.floor(Math.max(0, seconds) * Math.max(0, goldPerSecond));
 }
 
+export function waveProgress(wave: number): number {
+  return Math.min(19, Math.max(0, Math.floor(wave) - 1)) / 19;
+}
+
+export function waveClearReward(baseReward: number, difficulty: DifficultyDefinition): number {
+  return Math.max(0, Math.round(baseReward * difficulty.waveReward));
+}
+
 export function waveRoster(spawns: WaveSpawn[]): Array<{ type: EnemyType; count: number }> {
   const counts = new Map<EnemyType, number>();
   for (const spawn of spawns) {
@@ -129,19 +145,21 @@ export function dashDestination(origin: Point, input: Point, focus: Point | null
   };
 }
 
-export function scaleEnemy(definition: EnemyDefinition, difficulty: DifficultyDefinition): EnemyDefinition {
+export function scaleEnemy(definition: EnemyDefinition, difficulty: DifficultyDefinition, wave = 1): EnemyDefinition {
+  const progress = waveProgress(wave);
+  const rewardMultiplier = difficulty.enemyReward + (difficulty.lateEnemyReward - difficulty.enemyReward) * progress;
   return {
     ...definition,
     maxHp: Math.round(definition.maxHp * difficulty.enemyHp),
     speed: definition.speed * difficulty.enemySpeed,
-    reward: Math.max(1, Math.round(definition.reward * difficulty.enemyReward)),
+    reward: Math.max(1, Math.round(definition.reward * rewardMultiplier)),
   };
 }
 
-export function waveHpMultiplier(wave: number): number {
-  return 1 + Math.min(19, Math.max(0, Math.floor(wave) - 1)) * 0.025;
+export function waveHpMultiplier(wave: number, growth = 1): number {
+  return 1 + Math.min(19, Math.max(0, Math.floor(wave) - 1)) * 0.025 * Math.max(0, growth);
 }
 
-export function waveSpeedMultiplier(wave: number): number {
-  return 1 + Math.min(19, Math.max(0, Math.floor(wave) - 1)) * 0.008;
+export function waveSpeedMultiplier(wave: number, growth = 1): number {
+  return 1 + Math.min(19, Math.max(0, Math.floor(wave) - 1)) * 0.008 * Math.max(0, growth);
 }

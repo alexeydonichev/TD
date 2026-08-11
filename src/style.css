@@ -51,10 +51,19 @@ button { font: inherit; color: inherit; }
 #zoom-reset { min-width: 58px; color: var(--cyan); font-size: 10px; font-weight: 900; }
 .camera-controls button:hover { background: rgba(116,223,242,.14); border-color: rgba(116,223,242,.35); }
 
-.wave-card { position: absolute; z-index: 70; top: 91px; left: 28px; width: 285px; padding: 14px 16px 15px; border-radius: 9px; border-left: 3px solid var(--purple); }
+.wave-card { position: absolute; z-index: 70; right: 18px; bottom: 112px; width: 320px; padding: 14px 16px 15px; border-radius: 9px; border-right: 3px solid var(--purple); pointer-events: none; transition: width .18s ease, padding .18s ease; }
+.wave-card button { pointer-events: auto; }
+.wave-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.wave-card-header > div { min-width: 0; }
+.wave-card-header #wave-toggle { flex: 0 0 30px; min-width: 30px; height: 28px; color: #d9baff; font-size: 16px; line-height: 1; }
 .wave-card h2 { margin: 5px 0 2px; font-family: Georgia, serif; font-size: 18px; color: #f3d8ff; }
 .wave-card p { margin: 0 0 11px; color: #beb4c7; font-size: 12px; }
 .wave-card .strategy-hint { margin: -5px 0 10px; padding-left: 8px; border-left: 2px solid rgba(114,221,240,.55); color: #8fc9d4; font-size: 10px; line-height: 1.35; }
+.wave-card.collapsed { width: 285px; padding: 11px 12px; }
+.wave-card.collapsed .wave-card-details { display: none; }
+.wave-card.collapsed .wave-economy { margin: 5px 0 7px; }
+.wave-card.collapsed #wave-reward { display: none; }
+.wave-card.collapsed h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wave-roster { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 0 0 8px; }
 .enemy-chip { min-width: 0; height: 32px; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 5px; padding: 2px 6px 2px 2px; border: 1px solid rgba(255,255,255,.1); border-radius: 6px; background: rgba(255,255,255,.045); }
 .enemy-chip:only-child { grid-column: 1 / -1; }
@@ -205,7 +214,8 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
 .high-contrast .eyebrow, .high-contrast small { color: #fff !important; }
 .high-contrast .primary { background: #fff0a8; color: #140d1c; }
 .large-text .topbar, .large-text .build-panel, .large-text .hero-panel { font-size: 115%; }
-.large-text .wave-card, .large-text .tower-panel { transform: scale(1.08); transform-origin: top left; }
+.large-text .wave-card { transform: scale(1.08); transform-origin: bottom right; }
+.large-text .tower-panel { transform: scale(1.08); transform-origin: top left; }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 
 @media (max-width: 1180px) {
@@ -223,7 +233,8 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
   .top-actions .icon-button, .top-actions .speed-button { min-width: 32px; width: 32px; height: 32px; }
   .difficulty-badge { max-width: 72px; padding: 5px 6px; overflow: hidden; text-overflow: ellipsis; }
 
-  .wave-card { top: 72px; left: 8px; width: 260px; padding: 12px 13px; }
+  .wave-card { right: 8px; bottom: 84px; width: 280px; padding: 12px 13px; }
+  .wave-card.collapsed { width: 250px; }
   .wave-card h2 { font-size: 16px; }
   .camera-controls { top: 72px; right: 8px; }
   .boss-bar { top: 72px; width: min(500px, calc(100vw - 580px)); min-width: 300px; }
@@ -264,7 +275,8 @@ button:focus-visible { outline: 3px solid #9eefff; outline-offset: 2px; }
 
 @media (max-height: 760px) {
   .topbar { top: 7px; }
-  .wave-card, .boss-bar { top: 76px; }
+  .boss-bar { top: 76px; }
+  .wave-card { bottom: 82px; }
   .camera-controls { top: 76px; }
   .tower-panel { top: 350px; }
   .large-text .tower-panel { transform: none; font-size: 115%; }

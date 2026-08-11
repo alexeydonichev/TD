@@ -14,6 +14,21 @@ test('полный ускоренный матч: башня, способнос
   const canvas = page.locator('canvas');
   await expect(canvas).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
+  const waveCard = page.locator('#wave-card');
+  const cardBox = await waveCard.boundingBox();
+  const viewport = page.viewportSize();
+  expect(cardBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(cardBox!.x + cardBox!.width).toBeGreaterThan(viewport!.width * 0.9);
+  expect(cardBox!.y).toBeGreaterThan(viewport!.height * 0.45);
+  await expect(waveCard).toHaveClass(/collapsed/);
+  await expect(page.locator('#wave-details')).toBeHidden();
+  await expect(page.locator('#start-wave')).toBeVisible();
+  await expect(page.locator('#wave-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('#wave-toggle').click();
+  await expect(page.locator('#wave-details')).toBeVisible();
+  await page.locator('#wave-toggle').click();
+  await expect(page.locator('#wave-details')).toBeHidden();
   const heroBefore = await page.evaluate(() => window.__TD_TEST__?.state().hero);
   await page.keyboard.down('KeyA');
   await page.waitForTimeout(250);
@@ -24,17 +39,25 @@ test('полный ускоренный матч: башня, способнос
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 1)).toBeGreaterThan(zoomBefore);
   await page.locator('#zoom-reset').click();
   await expect(page.locator('#zoom-reset')).toContainText('%');
+  await page.locator('#zoom-out').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 2)).toBeLessThanOrEqual(1.01);
   await page.screenshot({ path: 'test-results/landscape-v3.png', fullPage: true });
   await page.locator('[data-tower="archer"]').click();
+  await expect(page.locator('#placement-message')).toContainText('ячейки 50×50');
+  await page.screenshot({ path: 'test-results/build-grid.png', fullPage: true });
   const box = await canvas.boundingBox();
   if (!box) throw new Error('Canvas has no bounding box');
   const clickWorld = async (x: number, y: number) => page.mouse.click(box.x + box.width * (x / 1200), box.y + box.height * (y / 700));
   await clickWorld(360, 250);
   await expect(page.locator('#tower-panel')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const tower = window.__TD_TEST__?.state().selectedTower;
+    return tower ? { x: tower.x, y: tower.y } : null;
+  })).toEqual({ x: 350, y: 250 });
   await expect(page.getByRole('button', { name: /Начать досрочно/ })).toBeInViewport();
 
   for (const [type, x, y, name] of [
-    ['frost', 570, 240, 'Ледяная башня'],
+    ['frost', 600, 250, 'Ледяная башня'],
     ['siege', 650, 450, 'Осадная башня'],
     ['boost', 930, 420, 'Башня усиления'],
   ] as const) {
@@ -87,7 +110,7 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('[data-difficulty="story"] .difficulty-rule')).toHaveCount(3);
   await expect(page.locator('[data-difficulty="story"]')).toContainText('Герой: +15% урона');
   await expect(page.locator('[data-difficulty="standard"]')).toContainText('12 секунд между волнами');
-  await expect(page.locator('[data-difficulty="rift"]')).toContainText('Щиты боссов: +25% времени');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('зачистка −50%');
   await page.screenshot({ path: 'test-results/difficulty-rules.png', fullPage: true });
   await page.locator('[data-difficulty="story"]').click();
   await page.locator('#begin').click();
@@ -105,16 +128,17 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('#settings-dialog')).toBeHidden();
 });
 
-test('Повелитель бури ускоряет подготовку и снижает цену раннего старта', async ({ page }) => {
+test('Повелитель бури создаёт дефицитную экономику и ускоряет подготовку', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-difficulty="rift"]').click();
   await page.locator('#begin').click();
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('#gold')).toHaveText('360');
-  await expect(page.locator('#lives')).toHaveText('14');
+  await expect(page.locator('#gold')).toHaveText('330');
+  await expect(page.locator('#lives')).toHaveText('10');
   await expect(page.locator('#difficulty-badge')).toHaveText('ПОВЕЛИТЕЛЬ БУРИ');
   await expect(page.locator('#countdown')).toHaveText(/00:0[7-9]/);
-  await expect(page.locator('#start-wave')).toContainText(/\+◈ 1[0-4]/);
+  await expect(page.locator('#start-wave')).toContainText(/\+◈ [5-8]/);
+  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 18');
 });
 
 test('герой держит фокус, преследует цель и направляет рывок с WASD', async ({ page }) => {
@@ -149,7 +173,7 @@ test('герой держит фокус, преследует цель и на�
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x)).toBeLessThan(dashStart - 150);
 
   const moveStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
-  await page.mouse.click(box.x + box.width * (1050 / 1200), box.y + box.height * (600 / 700), { button: 'right' });
+  await page.mouse.click(box.x + box.width * (1050 / 1200), box.y + box.height * (450 / 700), { button: 'right' });
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.focusTarget)).toBeNull();
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x), { timeout: 3_000 }).toBeGreaterThan(moveStart + 40);
 
@@ -181,8 +205,9 @@ test('тактический брифинг показывает состав, �
   await page.goto('/?test=1');
   await page.locator('#begin').click();
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#wave-toggle').click();
 
-  await expect(page.locator('#wave-kicker')).toHaveText('СЛЕДУЮЩАЯ УГРОЗА');
+  await expect(page.locator('#wave-kicker')).toHaveText('СЛЕДУЮЩАЯ УГРОЗА · ВОЛНА 1');
   await expect(page.locator('#wave-roster .enemy-chip')).toHaveCount(1);
   await expect(page.locator('#wave-roster .enemy-chip')).toContainText('Налётчик');
   await expect(page.locator('#wave-roster .enemy-chip')).toContainText('×8');
@@ -197,10 +222,10 @@ test('тактический брифинг показывает состав, �
   await expect(page.locator('#tower-panel')).toBeVisible();
   const waveBox = await page.locator('.wave-card').boundingBox();
   const towerBox = await page.locator('#tower-panel').boundingBox();
-  expect(waveBox && towerBox && waveBox.y + waveBox.height <= towerBox.y, 'брифинг перекрывает панель башни').toBe(true);
+  expect(waveBox && towerBox && waveBox.x >= towerBox.x + towerBox.width, 'брифинг перекрывает панель башни').toBe(true);
 
   await page.locator('#start-wave').click();
-  await expect(page.locator('#wave-kicker')).toHaveText('ВОЛНА В БОЮ');
+  await expect(page.locator('#wave-kicker')).toHaveText('ВОЛНА 1 В БОЮ');
   await expect(page.locator('#start-wave')).toHaveText('Волна в бою');
 
   await page.evaluate(() => window.__TD_TEST__?.skipToBoss(3));

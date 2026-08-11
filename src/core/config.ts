@@ -2,6 +2,8 @@ import type { DifficultyDefinition, EnemyDefinition, Point, TowerDefinition, Wav
 
 export const GAME_WIDTH = 1200;
 export const GAME_HEIGHT = 700;
+export const BUILD_GRID_SIZE = 50;
+export const BUILD_GRID_PADDING = 50;
 export const STARTING_GOLD = 430;
 export const STARTING_LIVES = 20;
 export const INTERMISSION_SECONDS = 12;
@@ -11,24 +13,27 @@ export const WAVE_CLEAR_GOLD = 35;
 export const DIFFICULTIES: Record<string, DifficultyDefinition> = {
   story: {
     id: 'story', name: 'Хранитель', description: 'Тактическое знакомство без потери глубины', enemyHp: 0.78,
-    enemySpeed: 0.9, enemyReward: 1.18, startingGold: 520, crystalLives: 26, scoreMultiplier: 0.75,
+    enemySpeed: 0.9, enemyReward: 1.18, lateEnemyReward: 1.22, waveReward: 1.2, waveHpGrowth: 0.75, waveSpeedGrowth: 0.8,
+    startingGold: 520, crystalLives: 26, scoreMultiplier: 0.75,
     heroDamage: 1.15, heroSpeed: 1.08, heroManaRegen: 1.25, heroDamageTaken: 0.8, heroRespawn: 0.65,
     intermission: 1.25, bossShield: 0.75, earlyStartGold: 1.25,
     rules: ['Герой: +15% урона · регенерация маны +25%', 'Урон герою −20% · возврат через 4с', '15 секунд между волнами · щиты короче'],
   },
   standard: {
     id: 'standard', name: 'Защитник', description: 'Авторский баланс карты', enemyHp: 1,
-    enemySpeed: 1, enemyReward: 1, startingGold: STARTING_GOLD, crystalLives: STARTING_LIVES, scoreMultiplier: 1,
+    enemySpeed: 1, enemyReward: 1, lateEnemyReward: 1, waveReward: 1, waveHpGrowth: 1, waveSpeedGrowth: 1,
+    startingGold: STARTING_GOLD, crystalLives: STARTING_LIVES, scoreMultiplier: 1,
     heroDamage: 1, heroSpeed: 1, heroManaRegen: 1, heroDamageTaken: 1, heroRespawn: 1,
     intermission: 1, bossShield: 1, earlyStartGold: 1,
     rules: ['Герой и враги без модификаторов', '20 прочности · 430 стартового золота', '12 секунд между волнами · полная награда'],
   },
   rift: {
-    id: 'rift', name: 'Повелитель бури', description: 'Жёсткий темп и цена каждой ошибки', enemyHp: 1.28,
-    enemySpeed: 1.1, enemyReward: 0.9, startingGold: 360, crystalLives: 14, scoreMultiplier: 1.5,
-    heroDamage: 1, heroSpeed: 1, heroManaRegen: 0.9, heroDamageTaken: 1.25, heroRespawn: 1.35,
-    intermission: 0.75, bossShield: 1.25, earlyStartGold: 0.8,
-    rules: ['14 прочности · награды за врагов −10%', 'Регенерация маны −10% · входящий урон +25%', '9 секунд между волнами · Щиты боссов: +25% времени'],
+    id: 'rift', name: 'Повелитель бури', description: 'Дефицит ресурсов и нарастающий натиск', enemyHp: 1.28,
+    enemySpeed: 1.1, enemyReward: 0.72, lateEnemyReward: 0.46, waveReward: 0.5, waveHpGrowth: 1.1, waveSpeedGrowth: 1.1,
+    startingGold: 330, crystalLives: 10, scoreMultiplier: 2,
+    heroDamage: 1, heroSpeed: 1, heroManaRegen: 0.8, heroDamageTaken: 1.4, heroRespawn: 1.5,
+    intermission: 0.67, bossShield: 1.35, earlyStartGold: 0.45,
+    rules: ['10 прочности · награды за врагов −28% → −54%', 'Натиск растёт быстрее · мана −20% · урон герою +40%', '8 секунд подготовки · зачистка −50% · щиты +35%'],
   },
 };
 
