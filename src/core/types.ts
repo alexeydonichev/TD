@@ -10,6 +10,7 @@ export interface DifficultyDefinition {
   name: string;
   description: string;
   enemyHp: number;
+  enemyArmor: number;
   enemySpeed: number;
   enemyReward: number;
   lateEnemyReward: number;

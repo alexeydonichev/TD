@@ -151,6 +151,7 @@ export function scaleEnemy(definition: EnemyDefinition, difficulty: DifficultyDe
   return {
     ...definition,
     maxHp: Math.round(definition.maxHp * difficulty.enemyHp),
+    armor: definition.armor * difficulty.enemyArmor,
     speed: definition.speed * difficulty.enemySpeed,
     reward: Math.max(1, Math.round(definition.reward * rewardMultiplier)),
   };

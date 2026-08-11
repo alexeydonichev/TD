@@ -154,7 +154,7 @@ describe('режимы сложности', () => {
     expect(DIFFICULTIES.standard).toMatchObject({
       heroDamage: 1, heroSpeed: 1, heroManaRegen: 1, heroDamageTaken: 1,
       heroRespawn: 1, intermission: 1, bossShield: 1, earlyStartGold: 1,
-      lateEnemyReward: 1, waveReward: 1, waveHpGrowth: 1, waveSpeedGrowth: 1,
+      enemyArmor: 1, lateEnemyReward: 1, waveReward: 1, waveHpGrowth: 1, waveSpeedGrowth: 1,
     });
     expect(DIFFICULTIES.story.heroDamage).toBeGreaterThan(1);
     expect(DIFFICULTIES.story.heroDamageTaken).toBeLessThan(1);
@@ -181,9 +181,11 @@ describe('режимы сложности', () => {
     expect(scaled.reward).toBeGreaterThan(ENEMIES.raider.reward);
   });
 
-  it('Разлом усиливает здоровье и скорость, сохраняя положительную награду', () => {
+  it('Разлом дополнительно повышает здоровье на 30% и броню на 10%', () => {
     const scaled = scaleEnemy(ENEMIES.brute, DIFFICULTIES.rift, 20);
-    expect(scaled.maxHp).toBeGreaterThan(ENEMIES.brute.maxHp);
+    expect(DIFFICULTIES.rift.enemyHp / 1.28).toBeCloseTo(1.3);
+    expect(scaled.maxHp).toBe(Math.round(ENEMIES.brute.maxHp * 1.28 * 1.3));
+    expect(scaled.armor).toBeCloseTo(ENEMIES.brute.armor * 1.1);
     expect(scaled.speed).toBeGreaterThan(ENEMIES.brute.speed);
     expect(scaled.reward).toBeGreaterThan(0);
   });

@@ -10,6 +10,7 @@ page.setDefaultTimeout(8_000);
 
 const canvas = page.locator('canvas');
 const towerCosts = { archer: 110, frost: 145, siege: 185, boost: 160 };
+const towerNames = { archer: 'Стрелковая башня', frost: 'Ледяная башня', siege: 'Осадная башня', boost: 'Башня усиления' };
 const balancedPending = [
   { after: 1, kind: 'upgrade', x: 445, y: 255 },
   { after: 1, kind: 'upgrade', x: 350, y: 245 },
@@ -125,10 +126,7 @@ const plan = plans[strategy];
 if (!plan) throw new Error(`Unknown TD_STRATEGY: ${strategy}`);
 if (!['story', 'standard', 'rift'].includes(difficulty)) throw new Error(`Unknown TD_DIFFICULTY: ${difficulty}`);
 const riftReinforcements = [
-  { after: 16, kind: 'build', type: 'archer', x: 880, y: 100 },
-  { after: 16, kind: 'target', x: 880, y: 100 },
-  { after: 16, kind: 'upgrade', x: 880, y: 100 },
-  { after: 16, kind: 'upgrade', x: 880, y: 100 },
+  { after: 16, kind: 'upgrade', x: 1050, y: 350 },
   { after: 17, kind: 'build', type: 'siege', x: 650, y: 220 },
   { after: 17, kind: 'target', x: 650, y: 220 },
   { after: 17, kind: 'upgrade', x: 650, y: 220 },
@@ -149,13 +147,28 @@ const riftReinforcements = [
   { after: 19, kind: 'target', x: 950, y: 200 },
   { after: 19, kind: 'upgrade', x: 950, y: 200 },
   { after: 19, kind: 'upgrade', x: 950, y: 200 },
+  { after: 19, kind: 'build', type: 'boost', x: 900, y: 100 },
   { after: 19, kind: 'target', x: 400, y: 60 },
   { after: 19, kind: 'target', x: 620, y: 420 },
   { after: 19, kind: 'target', x: 600, y: 250 },
   { after: 19, kind: 'target', x: 690, y: 430 },
-  { after: 19, kind: 'target', x: 880, y: 600 },
+  { after: 19, kind: 'target', x: 900, y: 350 },
+  { after: 19, kind: 'target', x: 930, y: 360 },
+  { after: 19, kind: 'target', x: 850, y: 170 },
+  { after: 19, kind: 'target', x: 960, y: 170 },
+  { after: 19, kind: 'target', x: 1030, y: 420 },
+  { after: 19, kind: 'target', x: 1100, y: 350 },
+  { after: 19, kind: 'target', x: 1070, y: 100 },
 ];
-const pending = [...plan.pending, ...(difficulty === 'rift' ? riftReinforcements : [])];
+const basePending = difficulty === 'rift'
+  ? plan.pending.map((action) => {
+    if (action.x === 800 && action.y === 640) return { ...action, x: 1050, y: 350 };
+    if (action.x === 880 && action.y === 600) return { ...action, x: 900, y: 350 };
+    if (action.x === 1130 && action.y === 500) return { ...action, x: 1100, y: 350 };
+    return action;
+  })
+  : plan.pending;
+const pending = [...basePending, ...(difficulty === 'rift' ? riftReinforcements : [])];
 let spentGold = 0;
 
 function gold() {
@@ -177,11 +190,11 @@ async function worldClick(x, y, options = {}) {
 
 async function build(type, x, y) {
   if (await gold() < towerCosts[type]) return false;
-  const before = await gold();
   await page.locator(`[data-tower="${type}"]`).click();
   await worldClick(x, y);
-  const spent = before - await gold();
-  if (spent <= 0 || spent > towerCosts[type]) throw new Error(`Build ${type} at ${x},${y} failed; observed spend ${spent}`);
+  if (!(await page.locator('#tower-panel').isVisible()) || await page.locator('#tower-name').textContent() !== towerNames[type]) {
+    throw new Error(`Build ${type} at ${x},${y} failed`);
+  }
   spentGold += towerCosts[type];
   return true;
 }
@@ -189,13 +202,14 @@ async function build(type, x, y) {
 async function upgrade(x, y) {
   await worldClick(x, y);
   const button = page.locator('#upgrade');
-  if (!(await button.isVisible()) || !(await button.isEnabled())) return true;
+  if (!(await button.isVisible())) return false;
+  if (!(await button.isEnabled())) return true;
   const label = await button.textContent();
   const cost = Number(label?.match(/(\d+)/)?.[1] ?? 0);
   if (await gold() < cost) return false;
-  const before = await gold();
+  const beforeLevel = Number(await page.locator('#tower-level').textContent());
   await button.click();
-  if (before - await gold() <= 0) throw new Error(`Upgrade at ${x},${y} failed`);
+  if (Number(await page.locator('#tower-level').textContent()) !== beforeLevel + 1) throw new Error(`Upgrade at ${x},${y} failed`);
   spentGold += cost;
   return true;
 }
@@ -203,7 +217,8 @@ async function upgrade(x, y) {
 async function targetStrongest(x, y) {
   await worldClick(x, y);
   const button = page.locator('#target-mode');
-  if (!(await button.isVisible()) || !(await button.isEnabled())) return true;
+  if (!(await button.isVisible())) return false;
+  if (!(await button.isEnabled())) return true;
   if ((await button.textContent())?.includes('Самая сильная')) return true;
   await button.click();
   return true;
@@ -227,37 +242,48 @@ await page.locator('#start-wave').click();
 
 let lastWave = 0;
 let nextSpellAt = Date.now();
+let bossStormCasts = 0;
 const deadline = Date.now() + 7 * 60_000;
 while (Date.now() < deadline) {
   if (await page.locator('#end-screen:not(.hidden)').isVisible()) break;
   const wave = Number(await page.locator('#wave').textContent());
   if (wave !== lastWave) {
     lastWave = wave;
+    bossStormCasts = 0;
     console.log(JSON.stringify({ event: 'wave', wave, gold: await gold(), lives: Number(await page.locator('#lives').textContent()) }));
     const { hero } = combatPosition(wave);
     await worldClick(hero[0], hero[1], { button: 'right' });
   }
+  for (let index = 0; index < pending.length;) {
+    const action = pending[index];
+    if (action.after > wave) { index += 1; continue; }
+    const done = action.kind === 'build'
+      ? await build(action.type, action.x, action.y)
+      : action.kind === 'target'
+        ? await targetStrongest(action.x, action.y)
+        : await upgrade(action.x, action.y);
+    if (done) pending.splice(index, 1);
+    else index += 1;
+  }
   const start = page.locator('#start-wave');
   if (await start.isEnabled()) {
-    for (let index = 0; index < pending.length;) {
-      const action = pending[index];
-      if (action.after > wave) { index += 1; continue; }
-      const done = action.kind === 'build'
-        ? await build(action.type, action.x, action.y)
-        : action.kind === 'target'
-          ? await targetStrongest(action.x, action.y)
-          : await upgrade(action.x, action.y);
-      if (done) pending.splice(index, 1);
-      else index += 1;
-    }
     await start.evaluate((button) => { if (!button.disabled) button.click(); });
   }
   if (Date.now() >= nextSpellAt) {
     const { spell } = combatPosition(wave);
+    const bossWave = wave === 7 || wave === 14 || wave === 20;
+    const bossVisible = await page.locator('#boss-bar').isVisible();
+    if (bossVisible && bossStormCasts >= 2) await worldClick(950, 260, { button: 'right' });
+    const storm = page.locator('[data-ability="r"]');
+    if ((!bossWave || bossVisible) && await storm.isEnabled()) {
+      const bossStormPoints = [[130, 330], [510, 390], [950, 260]];
+      const stormPoint = bossVisible ? bossStormPoints[Math.min(bossStormCasts, bossStormPoints.length - 1)] : spell;
+      await page.keyboard.press('KeyR');
+      await worldClick(stormPoint[0], stormPoint[1]);
+      if (bossVisible) bossStormCasts += 1;
+    }
     await page.keyboard.press('KeyQ');
-    await page.keyboard.press('KeyE');
-    await page.keyboard.press('KeyR');
-    await worldClick(spell[0], spell[1]);
+    if (bossVisible) await page.keyboard.press('KeyE');
     nextSpellAt = Date.now() + 2_500;
   }
   await page.waitForTimeout(350);

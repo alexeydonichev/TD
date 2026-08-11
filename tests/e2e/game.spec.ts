@@ -110,7 +110,8 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('[data-difficulty="story"] .difficulty-rule')).toHaveCount(3);
   await expect(page.locator('[data-difficulty="story"]')).toContainText('Герой: +15% урона');
   await expect(page.locator('[data-difficulty="standard"]')).toContainText('12 секунд между волнами');
-  await expect(page.locator('[data-difficulty="rift"]')).toContainText('зачистка −50%');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('ещё +30% здоровья');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('броня +10%');
   await page.screenshot({ path: 'test-results/difficulty-rules.png', fullPage: true });
   await page.locator('[data-difficulty="story"]').click();
   await page.locator('#begin').click();
