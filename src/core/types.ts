@@ -38,6 +38,12 @@ export interface TowerLevel {
   upgradeCost: number | null;
   projectileCount: number;
   projectileScale: number;
+  perk: string;
+  splash?: number;
+  slow?: number;
+  armorPierce?: number;
+  damageBoost?: number;
+  attackSpeedBoost?: number;
 }
 
 export interface TowerDefinition {
@@ -49,7 +55,7 @@ export interface TowerDefinition {
   canTargetAir: boolean;
   splash: number;
   slow: number;
-  levels: [TowerLevel, TowerLevel, TowerLevel];
+  levels: [TowerLevel, TowerLevel, TowerLevel, TowerLevel, TowerLevel, TowerLevel];
 }
 
 export interface EnemyDefinition {

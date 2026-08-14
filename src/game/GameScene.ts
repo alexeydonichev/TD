@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   BUILD_GRID_PADDING, BUILD_GRID_SIZE, CRYSTAL, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
-  INTERMISSION_SECONDS, PATH, TOWERS, WAVES,
+  INTERMISSION_SECONDS, MAX_TOWER_LEVEL, PATH, TOWERS, WAVES,
 } from '../core/config';
 import {
   applySlow, chainTargets, damageOutcome, dashDestination, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy, snapToGrid,
@@ -72,6 +72,7 @@ interface Projectile {
   speed: number;
   splash: number;
   slow: number;
+  armorPierce: number;
   kind: OffensiveTowerType;
   level: number;
 }
@@ -137,10 +138,17 @@ export interface HudState {
     nextCost: number | null;
     sellValue: number;
     description: string;
+    perk: string;
     damage: number;
     attacksPerSecond: number;
     range: number;
     projectileCount: number;
+    projectileScale: number;
+    armorPierce: number;
+    splash: number;
+    slow: number;
+    auraDamage: number;
+    auraSpeed: number;
     damageDealt: number;
     kills: number;
     boosted: boolean;
@@ -708,10 +716,24 @@ export class GameScene extends Phaser.Scene {
     art.fillStyle(0x080912, 0.58).fillEllipse(4, 17, 62, 23);
     art.fillStyle(definition.color, 0.11 + tower.level * 0.025).fillCircle(0, -6, 30 + tower.level * 3);
     art.lineStyle(1.5 + tower.level * 0.5, definition.color, 0.52).strokeCircle(0, -6, 25 + tower.level * 2);
+    if (tower.level >= 4) {
+      art.lineStyle(1.5 + (tower.level - 3) * 0.5, 0xffe6a2, 0.6).strokeCircle(0, -6, 34 + tower.level * 2);
+    }
+    if (tower.level === MAX_TOWER_LEVEL) {
+      for (let index = 0; index < 6; index += 1) {
+        const angle = index / 6 * Math.PI * 2;
+        const x = Math.cos(angle) * 47;
+        const y = -6 + Math.sin(angle) * 38;
+        art.fillStyle(index % 2 ? 0xfff3b5 : definition.color, 0.9).fillTriangle(x, y - 5, x - 4, y + 4, x + 4, y + 4);
+      }
+    }
     tower.sprite.setFrame({ archer: 0, frost: 1, siege: 2, boost: 3 }[tower.type]);
-    tower.sprite.setPosition(0, -13).setAngle(0).setScale(0.098 + tower.level * 0.008).setTint(tower.level === 3 ? 0xfff1c2 : 0xffffff);
+    tower.sprite.setPosition(0, -13).setAngle(0).setScale(0.098 + tower.level * 0.008)
+      .setTint(tower.level === MAX_TOWER_LEVEL ? 0xffd36a : tower.level >= 4 ? 0xfff1c2 : 0xffffff);
     drawTowerDetails(tower.details, tower.type, tower.level, definition.color);
-    for (let index = 0; index < tower.level; index += 1) art.fillStyle(0xffdc72, 1).fillCircle(-10 + index * 10, 23, 3);
+    for (let index = 0; index < tower.level; index += 1) {
+      art.fillStyle(index >= 3 ? 0xff9f43 : 0xffdc72, 1).fillCircle((index - (tower.level - 1) / 2) * 8, 23, index >= 3 ? 3.5 : 3);
+    }
   }
 
   private updateTowerVisuals(): void {
@@ -748,7 +770,7 @@ export class GameScene extends Phaser.Scene {
 
   private upgradeSelected(): void {
     const tower = this.selectedTower;
-    if (!tower || tower.level >= 3) return;
+    if (!tower || tower.level >= MAX_TOWER_LEVEL) return;
     const cost = TOWERS[tower.type].levels[tower.level - 1].upgradeCost;
     if (cost === null || this.gold < cost) {
       this.placementMessage = 'Недостаточно золота для улучшения';
@@ -982,6 +1004,19 @@ export class GameScene extends Phaser.Scene {
     return { ...PATH[PATH.length - 1] };
   }
 
+  private boostAt(tower: TowerUnit): { damage: number; speed: number } {
+    let damage = 1;
+    let speed = 1;
+    for (const support of this.towers) {
+      if (support.type !== 'boost') continue;
+      const aura = TOWERS.boost.levels[support.level - 1];
+      if (distance(tower, support) > aura.range) continue;
+      damage = Math.max(damage, aura.damageBoost ?? 1);
+      speed = Math.max(speed, aura.attackSpeedBoost ?? 1);
+    }
+    return { damage, speed };
+  }
+
   private updateTowers(): void {
     for (const tower of this.towers) {
       if (tower.type === 'boost' || this.simTime < tower.nextAttackAt) continue;
@@ -991,17 +1026,17 @@ export class GameScene extends Phaser.Scene {
       const targetSnapshot = selectTarget(inRange.map((enemy) => ({ id: enemy.id, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: this.enemyDefinition(enemy.type).flying, alive: enemy.alive })), tower.targetMode, definition.canTargetAir);
       const target = inRange.find((enemy) => enemy.id === targetSnapshot?.id);
       if (!target) continue;
-      const boosted = this.towers.some((candidate) => candidate.type === 'boost' && distance(tower, candidate) <= TOWERS.boost.levels[candidate.level - 1].range);
+      const aura = this.boostAt(tower);
       const sealed = this.hero.sealUntil > this.simTime && distance(tower, this.hero) <= 240;
-      const multiplier = (boosted ? 1.25 : 1) * (sealed ? 1.35 : 1) * (TEST_MODE ? 3 : 1);
+      const multiplier = aura.damage * (sealed ? 1.35 : 1) * (TEST_MODE ? 3 : 1);
       const kind = tower.type as OffensiveTowerType;
       this.fireProjectile(
-        tower, target, level.damage * multiplier, definition.splash, definition.slow,
-        kind, tower.level, level.projectileScale, level.projectileCount,
+        tower, target, level.damage * multiplier, level.splash ?? definition.splash, level.slow ?? definition.slow,
+        level.armorPierce ?? 0, kind, tower.level, level.projectileScale, level.projectileCount,
       );
       animateTowerFire(this, tower.sprite, kind, tower.level, this.reduceMotion);
       emit('td:sound', kind === 'archer' ? 'arrow' : kind === 'frost' ? 'frost' : 'cannon');
-      tower.nextAttackAt = this.simTime + level.attackMs / (boosted ? 1.12 : 1);
+      tower.nextAttackAt = this.simTime + level.attackMs / aura.speed;
     }
   }
 
@@ -1011,6 +1046,7 @@ export class GameScene extends Phaser.Scene {
     damage: number,
     splash: number,
     slow: number,
+    armorPierce: number,
     kind: OffensiveTowerType,
     level: number,
     scale: number,
@@ -1022,7 +1058,7 @@ export class GameScene extends Phaser.Scene {
     this.projectiles.push({
       view, target, source: tower, damage,
       speed: kind === 'siege' ? 360 : 620,
-      splash, slow, kind, level,
+      splash, slow, armorPierce, kind, level,
     });
   }
 
@@ -1057,7 +1093,7 @@ export class GameScene extends Phaser.Scene {
       ? this.enemies.filter((enemy) => enemy.alive && distance(enemy.container, center) <= projectile.splash)
       : [projectile.target];
     targets.forEach((enemy) => {
-      const outcome = this.hitEnemy(enemy, projectile.damage, false);
+      const outcome = this.hitEnemy(enemy, projectile.damage, projectile.kind === 'frost', projectile.armorPierce);
       projectile.source.damageDealt += outcome.dealt;
       if (outcome.killed) projectile.source.kills += 1;
       if (projectile.slow > 0) {
@@ -1070,9 +1106,9 @@ export class GameScene extends Phaser.Scene {
     emit('td:sound', 'hit');
   }
 
-  private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean): { dealt: number; hp: number; killed: boolean } {
+  private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean, armorPierce = 0): { dealt: number; hp: number; killed: boolean } {
     if (!enemy.alive) return { dealt: 0, hp: Math.max(0, enemy.hp), killed: false };
-    const armor = magic ? this.enemyDefinition(enemy.type).armor * 0.2 : this.enemyDefinition(enemy.type).armor;
+    const armor = this.enemyDefinition(enemy.type).armor * (magic ? 0.2 : 1 - Math.max(0, Math.min(1, armorPierce)));
     const shield = this.isBossType(enemy.type) && enemy.shieldUntil > this.simTime ? 0.3 : 1;
     const outcome = damageOutcome(enemy.hp, rawDamage, armor, shield);
     enemy.hp = outcome.hp;
@@ -1369,7 +1405,8 @@ export class GameScene extends Phaser.Scene {
     const selected = this.selectedTower;
     const definition = selected ? TOWERS[selected.type] : null;
     const selectedLevel = selected && definition ? definition.levels[selected.level - 1] : null;
-    const selectedBoosted = Boolean(selected && selected.type !== 'boost' && this.towers.some((tower) => tower.type === 'boost' && distance(selected, tower) <= TOWERS.boost.levels[tower.level - 1].range));
+    const selectedAura = selected && selected.type !== 'boost' ? this.boostAt(selected) : { damage: 1, speed: 1 };
+    const selectedBoosted = selectedAura.damage > 1 || selectedAura.speed > 1;
     const auraTargets = selected && selected.type === 'boost' && selectedLevel
       ? this.towers.filter((tower) => tower.type !== 'boost' && distance(selected, tower) <= selectedLevel.range).length
       : 0;
@@ -1395,10 +1432,13 @@ export class GameScene extends Phaser.Scene {
       selectedTower: selected && definition && selectedLevel ? {
         type: selected.type, x: selected.x, y: selected.y, name: definition.name, level: selected.level, mode: selected.targetMode === 'first' ? 'Первая по пути' : 'Самая сильная',
         nextCost: definition.levels[selected.level - 1].upgradeCost,
-        sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description,
-        damage: selectedLevel.damage * (selectedBoosted ? 1.25 : 1),
-        attacksPerSecond: selectedLevel.attackMs > 0 ? 1000 / selectedLevel.attackMs * (selectedBoosted ? 1.12 : 1) : 0,
-        range: selectedLevel.range, projectileCount: selectedLevel.projectileCount,
+        sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description, perk: selectedLevel.perk,
+        damage: selectedLevel.damage * selectedAura.damage,
+        attacksPerSecond: selectedLevel.attackMs > 0 ? 1000 / selectedLevel.attackMs * selectedAura.speed : 0,
+        range: selectedLevel.range, projectileCount: selectedLevel.projectileCount, projectileScale: selectedLevel.projectileScale,
+        armorPierce: selectedLevel.armorPierce ?? 0, splash: selectedLevel.splash ?? definition.splash, slow: selectedLevel.slow ?? definition.slow,
+        auraDamage: selected.type === 'boost' ? selectedLevel.damageBoost ?? 1 : selectedAura.damage,
+        auraSpeed: selected.type === 'boost' ? selectedLevel.attackSpeedBoost ?? 1 : selectedAura.speed,
         damageDealt: selected.damageDealt, kills: selected.kills, boosted: selectedBoosted, auraTargets,
       } : null,
       hero: {

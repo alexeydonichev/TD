@@ -9,6 +9,7 @@ export const STARTING_LIVES = 20;
 export const INTERMISSION_SECONDS = 12;
 export const EARLY_START_GOLD_PER_SECOND = 2;
 export const WAVE_CLEAR_GOLD = 35;
+export const MAX_TOWER_LEVEL = 6;
 
 export const DIFFICULTIES: Record<string, DifficultyDefinition> = {
   story: {
@@ -67,9 +68,12 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 0,
     slow: 0,
     levels: [
-      { damage: 24, range: 150, attackMs: 620, upgradeCost: 90, projectileCount: 1, projectileScale: 0.88 },
-      { damage: 39, range: 165, attackMs: 520, upgradeCost: 155, projectileCount: 2, projectileScale: 1.02 },
-      { damage: 63, range: 180, attackMs: 430, upgradeCost: null, projectileCount: 3, projectileScale: 1.18 },
+      { damage: 24, range: 150, attackMs: 620, upgradeCost: 90, projectileCount: 1, projectileScale: 0.88, perk: 'Точный одиночный выстрел' },
+      { damage: 39, range: 165, attackMs: 520, upgradeCost: 155, projectileCount: 2, projectileScale: 1.02, perk: 'Парный залп' },
+      { damage: 63, range: 180, attackMs: 430, upgradeCost: 270, projectileCount: 3, projectileScale: 1.18, perk: 'Тройной залп' },
+      { damage: 98, range: 195, attackMs: 375, upgradeCost: 430, projectileCount: 4, projectileScale: 1.34, armorPierce: 0.15, perk: 'Бронебойные наконечники · игнор 15% брони' },
+      { damage: 140, range: 210, attackMs: 330, upgradeCost: 650, projectileCount: 5, projectileScale: 1.5, armorPierce: 0.25, perk: 'Ураганный залп · игнор 25% брони' },
+      { damage: 190, range: 225, attackMs: 295, upgradeCost: null, projectileCount: 6, projectileScale: 1.68, armorPierce: 0.35, perk: 'Золотой шторм · игнор 35% брони' },
     ],
   },
   frost: {
@@ -82,9 +86,12 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 38,
     slow: 0.32,
     levels: [
-      { damage: 17, range: 135, attackMs: 900, upgradeCost: 105, projectileCount: 1, projectileScale: 0.9 },
-      { damage: 28, range: 150, attackMs: 800, upgradeCost: 170, projectileCount: 2, projectileScale: 1.08 },
-      { damage: 45, range: 170, attackMs: 690, upgradeCost: null, projectileCount: 3, projectileScale: 1.28 },
+      { damage: 17, range: 135, attackMs: 900, upgradeCost: 105, projectileCount: 1, projectileScale: 0.9, perk: 'Магический ледяной осколок' },
+      { damage: 28, range: 150, attackMs: 800, upgradeCost: 170, projectileCount: 2, projectileScale: 1.08, slow: 0.34, perk: 'Двойное промерзание · замедление 34%' },
+      { damage: 45, range: 170, attackMs: 690, upgradeCost: 300, projectileCount: 3, projectileScale: 1.28, splash: 42, slow: 0.36, perk: 'Ледяной веер · замедление 36%' },
+      { damage: 72, range: 185, attackMs: 620, upgradeCost: 470, projectileCount: 4, projectileScale: 1.44, splash: 48, slow: 0.39, perk: 'Кольцо стужи · зона 48 · замедление 39%' },
+      { damage: 104, range: 202, attackMs: 560, upgradeCost: 700, projectileCount: 5, projectileScale: 1.62, splash: 56, slow: 0.43, perk: 'Глубокая заморозка · зона 56 · замедление 43%' },
+      { damage: 142, range: 220, attackMs: 510, upgradeCost: null, projectileCount: 6, projectileScale: 1.82, splash: 66, slow: 0.48, perk: 'Абсолютный ноль · зона 66 · замедление 48%' },
     ],
   },
   siege: {
@@ -97,9 +104,12 @@ export const TOWERS: Record<string, TowerDefinition> = {
     splash: 72,
     slow: 0,
     levels: [
-      { damage: 72, range: 175, attackMs: 1700, upgradeCost: 135, projectileCount: 1, projectileScale: 0.92 },
-      { damage: 118, range: 190, attackMs: 1500, upgradeCost: 210, projectileCount: 1, projectileScale: 1.18 },
-      { damage: 188, range: 210, attackMs: 1300, upgradeCost: null, projectileCount: 1, projectileScale: 1.52 },
+      { damage: 72, range: 175, attackMs: 1700, upgradeCost: 135, projectileCount: 1, projectileScale: 0.92, perk: 'Чугунное ядро · зона 72' },
+      { damage: 118, range: 190, attackMs: 1500, upgradeCost: 210, projectileCount: 1, projectileScale: 1.18, splash: 76, perk: 'Тяжёлое ядро · зона 76' },
+      { damage: 188, range: 210, attackMs: 1300, upgradeCost: 350, projectileCount: 1, projectileScale: 1.52, splash: 82, perk: 'Разрывное ядро · зона 82' },
+      { damage: 290, range: 225, attackMs: 1180, upgradeCost: 560, projectileCount: 1, projectileScale: 1.82, splash: 90, armorPierce: 0.15, perk: 'Сейсмический заряд · зона 90 · игнор 15% брони' },
+      { damage: 415, range: 243, attackMs: 1060, upgradeCost: 850, projectileCount: 1, projectileScale: 2.14, splash: 102, armorPierce: 0.25, perk: 'Магмовое ядро · зона 102 · игнор 25% брони' },
+      { damage: 565, range: 260, attackMs: 950, upgradeCost: null, projectileCount: 1, projectileScale: 2.5, splash: 118, armorPierce: 0.35, perk: 'Сердце вулкана · зона 118 · игнор 35% брони' },
     ],
   },
   boost: {
@@ -107,14 +117,17 @@ export const TOWERS: Record<string, TowerDefinition> = {
     name: 'Башня усиления',
     cost: 160,
     color: 0xb78cff,
-    description: 'Усиливает урон соседних башен на 25%',
+    description: 'Усиливает соседние башни в радиусе ауры',
     canTargetAir: false,
     splash: 0,
     slow: 0,
     levels: [
-      { damage: 0, range: 135, attackMs: 0, upgradeCost: 120, projectileCount: 0, projectileScale: 1 },
-      { damage: 0, range: 160, attackMs: 0, upgradeCost: 185, projectileCount: 0, projectileScale: 1 },
-      { damage: 0, range: 190, attackMs: 0, upgradeCost: null, projectileCount: 0, projectileScale: 1 },
+      { damage: 0, range: 135, attackMs: 0, upgradeCost: 120, projectileCount: 0, projectileScale: 1, damageBoost: 1.25, attackSpeedBoost: 1.12, perk: 'Резонанс · +25% урона · +12% скорости' },
+      { damage: 0, range: 160, attackMs: 0, upgradeCost: 185, projectileCount: 0, projectileScale: 1, damageBoost: 1.25, attackSpeedBoost: 1.12, perk: 'Расширенный резонанс · +25% урона · +12% скорости' },
+      { damage: 0, range: 190, attackMs: 0, upgradeCost: 250, projectileCount: 0, projectileScale: 1, damageBoost: 1.25, attackSpeedBoost: 1.12, perk: 'Аура Разлома · +25% урона · +12% скорости' },
+      { damage: 0, range: 212, attackMs: 0, upgradeCost: 400, projectileCount: 0, projectileScale: 1, damageBoost: 1.32, attackSpeedBoost: 1.15, perk: 'Рунная сеть · +32% урона · +15% скорости' },
+      { damage: 0, range: 236, attackMs: 0, upgradeCost: 600, projectileCount: 0, projectileScale: 1, damageBoost: 1.39, attackSpeedBoost: 1.18, perk: 'Великий проводник · +39% урона · +18% скорости' },
+      { damage: 0, range: 260, attackMs: 0, upgradeCost: null, projectileCount: 0, projectileScale: 1, damageBoost: 1.48, attackSpeedBoost: 1.22, perk: 'Сердце усиления · +48% урона · +22% скорости' },
     ],
   },
 };

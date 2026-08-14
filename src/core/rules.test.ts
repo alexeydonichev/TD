@@ -16,13 +16,20 @@ const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext 
 
 describe('визуальная эволюция башен', () => {
   it('увеличивает число стрел и ледяных осколков на каждом уровне', () => {
-    expect(TOWERS.archer.levels.map((level) => level.projectileCount)).toEqual([1, 2, 3]);
-    expect(TOWERS.frost.levels.map((level) => level.projectileCount)).toEqual([1, 2, 3]);
+    expect(TOWERS.archer.levels.map((level) => level.projectileCount)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(TOWERS.frost.levels.map((level) => level.projectileCount)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('делает осадное ядро тяжелее без скрытого умножения числа попаданий', () => {
-    expect(TOWERS.siege.levels.map((level) => level.projectileCount)).toEqual([1, 1, 1]);
-    expect(TOWERS.siege.levels.map((level) => level.projectileScale)).toEqual([0.92, 1.18, 1.52]);
+    expect(TOWERS.siege.levels.map((level) => level.projectileCount)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(TOWERS.siege.levels.map((level) => level.projectileScale)).toEqual([0.92, 1.18, 1.52, 1.82, 2.14, 2.5]);
+  });
+
+  it('открывает уникальные свойства поздних уровней', () => {
+    expect(TOWERS.archer.levels[5].armorPierce).toBe(0.35);
+    expect(TOWERS.frost.levels.map((level) => level.slow ?? TOWERS.frost.slow)).toEqual([0.32, 0.34, 0.36, 0.39, 0.43, 0.48]);
+    expect(TOWERS.siege.levels[5].splash).toBe(118);
+    expect(TOWERS.boost.levels[5]).toMatchObject({ range: 260, damageBoost: 1.48, attackSpeedBoost: 1.22 });
   });
 });
 
@@ -93,10 +100,12 @@ describe('строительство и экономика', () => {
     expect(placementFailure(placement(overrides))).toBe(reason);
   });
 
-  it('улучшает только при наличии золота и не выше третьего уровня', () => {
-    expect(upgrade(200, 1, [80, 120])).toEqual({ ok: true, gold: 120, level: 2 });
-    expect(upgrade(20, 2, [80, 120])).toEqual({ ok: false, gold: 20, level: 2 });
-    expect(upgrade(500, 3, [80, 120])).toEqual({ ok: false, gold: 500, level: 3 });
+  it('улучшает только при наличии золота и не выше настроенного максимума', () => {
+    const costs = [80, 120, 200, 320, 500];
+    expect(upgrade(200, 1, costs)).toEqual({ ok: true, gold: 120, level: 2 });
+    expect(upgrade(20, 2, costs)).toEqual({ ok: false, gold: 20, level: 2 });
+    expect(upgrade(900, 5, costs)).toEqual({ ok: true, gold: 400, level: 6 });
+    expect(upgrade(900, 6, costs)).toEqual({ ok: false, gold: 900, level: 6 });
   });
 
   it('возвращает 70% всех вложений при продаже', () => {

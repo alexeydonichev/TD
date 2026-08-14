@@ -295,20 +295,27 @@ test('каждый уровень меняет боеприпас и залп б
   if (!box) throw new Error('Canvas has no bounding box');
   const clickWorld = async (x: number, y: number) => page.mouse.click(box.x + box.width * (x / 1200), box.y + box.height * (y / 700));
 
-  for (const [type, x, y, levelOne, levelThree] of [
-    ['archer', 350, 250, 'залп: 1 стрела', 'залп: 3 стрелы'],
-    ['frost', 600, 250, 'залп: 1 осколок', 'залп: 3 осколка'],
-    ['siege', 650, 450, 'ядро: размер 1', 'ядро: размер 3'],
+  for (const [type, x, y, levelOne, levelSix] of [
+    ['archer', 350, 250, 'залп: 1 стрела', 'залп: 6 стрел'],
+    ['frost', 600, 250, 'залп: 1 осколок', 'залп: 6 осколков'],
+    ['siege', 650, 450, 'Чугунное ядро', 'Сердце вулкана'],
   ] as const) {
     await page.locator(`[data-tower="${type}"]`).click();
     await clickWorld(x, y);
     await expect(page.locator('#tower-description')).toContainText(levelOne);
     await expect(page.locator('#upgrade')).toContainText('U');
-    await page.keyboard.press('KeyU');
-    await page.keyboard.press('KeyU');
-    await expect(page.locator('#tower-level')).toHaveText('3');
-    await expect(page.locator('#tower-description')).toContainText(levelThree);
+    for (let level = 2; level <= 6; level += 1) await page.keyboard.press('KeyU');
+    await expect(page.locator('#tower-level')).toHaveText('6');
+    await expect(page.locator('#tower-description')).toContainText(levelSix);
+    await expect(page.locator('#upgrade')).toContainText('Макс. уровень VI');
   }
+
+  await page.locator('[data-tower="boost"]').click();
+  await clickWorld(950, 400);
+  for (let level = 2; level <= 6; level += 1) await page.keyboard.press('KeyU');
+  await expect(page.locator('#tower-level')).toHaveText('6');
+  await expect(page.locator('#tower-power')).toHaveText('+48%');
+  await expect(page.locator('#tower-rate')).toHaveText('+22%');
 
   await clickWorld(350, 250);
   await expect(page.locator('#tower-name')).toHaveText('Стрелковая башня');

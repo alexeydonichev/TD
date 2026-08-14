@@ -413,9 +413,17 @@ function strategyHint(wave: number): string {
   if (wave <= 10) return 'Усильте противовоздушную линию и перекройте второй поворот.';
   if (wave <= 13) return 'Улучшайте башни до III уровня: число целей быстро растёт.';
   if (wave === 14) return 'БОСС II: броню Титана лучше всего ломают осадные и магические атаки.';
-  if (wave <= 17) return 'Две линии контроля и башня усиления важнее одиночного урона.';
-  if (wave <= 19) return 'Элитные волны: держите героя у самого загруженного участка.';
+  if (wave <= 17) return 'Откройте IV уровень ключевых башен: он добавляет особую боевую механику.';
+  if (wave <= 19) return 'Элитные волны: уровни V–VI дороги, но превращают опорную башню в легендарную.';
   return 'БОСС III: его прорыв уничтожит Кристалл. Сохраните Сердце бури для второй фазы.';
+}
+
+function russianCount(count: number, one: string, few: string, many: string): string {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (last === 1 && lastTwo !== 11) return one;
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return few;
+  return many;
 }
 
 function renderTowerPanel(state: HudState): void {
@@ -424,10 +432,12 @@ function renderTowerPanel(state: HudState): void {
   if (!state.selectedTower) return;
   get('tower-name').textContent = state.selectedTower.name;
   const volley = state.selectedTower.type === 'boost' ? ''
-    : state.selectedTower.type === 'archer' ? ` · залп: ${state.selectedTower.projectileCount} ${state.selectedTower.projectileCount === 1 ? 'стрела' : 'стрелы'}`
-      : state.selectedTower.type === 'frost' ? ` · залп: ${state.selectedTower.projectileCount} ${state.selectedTower.projectileCount === 1 ? 'осколок' : 'осколка'}`
-        : ` · ядро: размер ${state.selectedTower.level}`;
-  get('tower-description').textContent = `${state.selectedTower.description}${volley}`;
+    : state.selectedTower.type === 'archer'
+      ? ` · залп: ${state.selectedTower.projectileCount} ${russianCount(state.selectedTower.projectileCount, 'стрела', 'стрелы', 'стрел')}`
+      : state.selectedTower.type === 'frost'
+        ? ` · залп: ${state.selectedTower.projectileCount} ${russianCount(state.selectedTower.projectileCount, 'осколок', 'осколка', 'осколков')}`
+        : ` · ядро: ${state.selectedTower.projectileScale.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}×`;
+  get('tower-description').textContent = `${state.selectedTower.description} · ${state.selectedTower.perk}${volley}`;
   get('tower-level').textContent = String(state.selectedTower.level);
   const support = state.selectedTower.type === 'boost';
   const targetMode = get<HTMLButtonElement>('target-mode');
@@ -435,10 +445,12 @@ function renderTowerPanel(state: HudState): void {
   targetMode.disabled = support;
   get('tower-power-label').textContent = support ? 'УСИЛЕНИЕ' : 'УРОН';
   get('tower-rate-label').textContent = support ? 'СКОРОСТЬ' : 'АТАКИ';
-  get('tower-power').textContent = support ? '+25%' : String(Math.round(state.selectedTower.damage));
-  get('tower-rate').textContent = support ? '+12%' : `${state.selectedTower.attacksPerSecond.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/с`;
+  get('tower-power').textContent = support ? `+${Math.round((state.selectedTower.auraDamage - 1) * 100)}%` : String(Math.round(state.selectedTower.damage));
+  get('tower-rate').textContent = support ? `+${Math.round((state.selectedTower.auraSpeed - 1) * 100)}%` : `${state.selectedTower.attacksPerSecond.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/с`;
   get('tower-range').textContent = String(state.selectedTower.range);
-  get('tower-boosted').classList.toggle('hidden', !state.selectedTower.boosted);
+  const boosted = get('tower-boosted');
+  boosted.classList.toggle('hidden', !state.selectedTower.boosted);
+  boosted.textContent = `✦ Аура: +${Math.round((state.selectedTower.auraDamage - 1) * 100)}% урона · +${Math.round((state.selectedTower.auraSpeed - 1) * 100)}% скорости`;
   get('tower-performance-label').textContent = support ? 'В АУРЕ' : 'НАНЕСЕНО';
   get('tower-kills-label').textContent = support ? 'РОЛЬ' : 'УНИЧТОЖЕНО';
   const performance = support ? state.selectedTower.auraTargets : Math.round(state.selectedTower.damageDealt);
@@ -447,7 +459,7 @@ function renderTowerPanel(state: HudState): void {
   get('tower-kills').textContent = support ? 'ПОДДЕРЖКА' : String(state.selectedTower.kills);
   const upgrade = get<HTMLButtonElement>('upgrade');
   upgrade.disabled = state.selectedTower.nextCost === null;
-  upgrade.innerHTML = state.selectedTower.nextCost === null ? 'Макс. уровень <kbd>U</kbd>' : `Улучшить <kbd>U</kbd> · ◈ ${state.selectedTower.nextCost}`;
+  upgrade.innerHTML = state.selectedTower.nextCost === null ? 'Макс. уровень VI <kbd>U</kbd>' : `Улучшить <kbd>U</kbd> · ◈ ${state.selectedTower.nextCost}`;
   get('sell').textContent = `Продать · ◈ ${state.selectedTower.sellValue}`;
 }
 

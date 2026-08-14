@@ -65,8 +65,8 @@ export function buy(gold: number, cost: number): { ok: boolean; gold: number } {
   return gold >= cost ? { ok: true, gold: gold - cost } : { ok: false, gold };
 }
 
-export function upgrade(gold: number, level: number, costs: [number, number]): { ok: boolean; gold: number; level: number } {
-  if (level >= 3) return { ok: false, gold, level };
+export function upgrade(gold: number, level: number, costs: readonly number[]): { ok: boolean; gold: number; level: number } {
+  if (level < 1 || level > costs.length) return { ok: false, gold, level };
   const cost = costs[level - 1];
   return gold >= cost ? { ok: true, gold: gold - cost, level: level + 1 } : { ok: false, gold, level };
 }
