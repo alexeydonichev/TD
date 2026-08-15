@@ -3,7 +3,28 @@ export type TowerType = 'archer' | 'frost' | 'siege' | 'boost';
 export type EnemyType = 'raider' | 'runner' | 'brute' | 'winged' | 'warden' | 'titan' | 'boss';
 export type TargetMode = 'first' | 'strongest';
 export type Difficulty = 'story' | 'standard' | 'rift';
+export type MapId = 'valley' | 'frozen' | 'bastion';
 export type HeroStance = 'guard' | 'pursuit';
+
+export interface MapDefinition {
+  id: MapId;
+  number: number;
+  name: string;
+  subtitle: string;
+  description: string;
+  asset: string;
+  path: Point[];
+  crystal: Point;
+  forbidden: Array<{ x: number; y: number; radius: number }>;
+  enemyHp: number;
+  enemyArmor: number;
+  enemySpeed: number;
+  goldMultiplier: number;
+  scoreMultiplier: number;
+  accent: number;
+  routeColor: number;
+  tint: number;
+}
 
 export interface DifficultyDefinition {
   id: Difficulty;

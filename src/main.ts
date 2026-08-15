@@ -1,7 +1,7 @@
 import './style.css';
-import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, TOWERS, WAVES } from './core/config';
+import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
 import { earlyStartBonus, waveClearReward, waveRoster } from './core/rules';
-import type { Difficulty, TowerType } from './core/types';
+import type { Difficulty, MapId, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
 import { emit, on } from './game/bus';
 import type { HudState } from './game/GameScene';
@@ -11,7 +11,7 @@ app.innerHTML = `
   <main class="game-shell" aria-label="Долина Разлома">
     <div id="game" class="game-canvas" aria-label="Игровая карта"></div>
     <section class="topbar glass" aria-label="Состояние матча">
-      <div class="brand"><span class="brand-mark">◆</span><div><small>ДОЛИНА</small><strong>РАЗЛОМА</strong></div></div>
+      <div class="brand"><span class="brand-mark">◆</span><div><small id="brand-map-kicker">КАРТА I</small><strong id="brand-map-name">ДОЛИНА РАЗЛОМА</strong></div></div>
       <div class="resource gold"><span>◈</span><div><small>ЗОЛОТО</small><b id="gold">0</b></div></div>
       <div class="resource lives"><span>♦</span><div><small>КРИСТАЛЛ</small><b id="lives">20</b></div></div>
       <div class="resource"><span>☷</span><div><small>ВОЛНА</small><b><i id="wave">0</i>/<i id="wave-total">20</i></b></div></div>
@@ -107,13 +107,21 @@ app.innerHTML = `
       <div class="start-rune">◆</div>
       <div class="eyebrow">ОРИГИНАЛЬНАЯ ФЭНТЕЗИ TOWER DEFENSE</div>
       <h1>Долина <span>Разлома</span></h1>
-      <p>Защитите Кристалл в двадцати волнах и одолейте трёх владык Разлома.</p>
+      <p id="start-map-copy">Защитите Кристалл в двадцати волнах и одолейте трёх владык Разлома.</p>
+      <div class="selection-label">КАМПАНИЯ · 3 КАРТЫ</div>
+      <div class="map-picker" role="radiogroup" aria-label="Карта кампании">
+        ${mapButton('valley')}
+        ${mapButton('frozen')}
+        ${mapButton('bastion')}
+      </div>
+      <div class="selection-label difficulty-label">УРОВЕНЬ СЛОЖНОСТИ</div>
       <div class="difficulty-picker" role="radiogroup" aria-label="Сложность">
         ${difficultyButton('story')}
         ${difficultyButton('standard')}
         ${difficultyButton('rift')}
       </div>
       <button id="begin" class="start-button">НАЧАТЬ ИГРУ</button>
+      <small id="load-status" class="load-status" role="status" aria-live="polite"></small>
       <div class="controls"><span>WASD · точное движение</span><span>ПКМ · идти / фокус</span><span>C / X · режим / стоп</span><span>R + ЛКМ · выбрать зону</span></div>
     </div>
 
@@ -154,6 +162,17 @@ function difficultyButton(id: Difficulty): string {
   return `<button class="difficulty-option" data-difficulty="${id}" role="radio" aria-checked="false"><b>${difficulty.name}</b><small>${difficulty.description}</small><span class="difficulty-rules">${difficulty.rules.map((rule) => `<em class="difficulty-rule">${rule}</em>`).join('')}</span><i>×${difficulty.scoreMultiplier} к счёту</i></button>`;
 }
 
+function mapButton(id: MapId): string {
+  const map = MAPS[id];
+  const economy = Math.round((1 - map.goldMultiplier) * 100);
+  const pressure = map.id === 'valley' ? 'БАЗОВЫЙ БАЛАНС' : `ВРАГИ +${Math.round((map.enemyHp - 1) * 100)}% · ЗОЛОТО −${economy}%`;
+  return `<button class="map-option map-${id}" data-map="${id}" role="radio" aria-checked="false"><span><b>КАРТА ${roman(map.number)}</b><em>${map.subtitle}</em></span><strong>${map.name}</strong><small>${map.description}</small><i>${pressure}</i></button>`;
+}
+
+function roman(value: number): string {
+  return ['I', 'II', 'III'][value - 1] ?? String(value);
+}
+
 function buildButton(type: TowerType, key: string, icon: string): string {
   const tower = TOWERS[type];
   return `<button class="build-button" data-tower="${type}" title="${tower.description}" aria-label="${tower.name}, стоимость ${tower.cost}"><kbd>${key}</kbd><i aria-hidden="true">${icon}</i><span>${tower.name.replace(' башня', '')}<b>◈ ${tower.cost}</b></span></button>`;
@@ -169,9 +188,15 @@ function bar(id: string, label: string): string {
 
 const get = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const audio = new AudioManager();
+const importGameModules = () => Promise.all([import('phaser'), import('./game/GameScene')]);
 let latestState: HudState | null = null;
 let gameLoad: Promise<void> | null = null;
+let gameModules: ReturnType<typeof importGameModules> | null = null;
+let gameInstance: import('phaser').Game | null = null;
+let loadFailed = false;
 let selectedDifficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
+const storedMap = localStorage.getItem('rift-map') as MapId | null;
+let selectedMap: MapId = storedMap && MAPS[storedMap] ? storedMap : 'valley';
 const isTestMode = new URLSearchParams(window.location.search).get('test') === '1';
 let lastAnnouncedWave = -1;
 let lastBriefedWave = '';
@@ -188,32 +213,106 @@ function setWaveCardCollapsed(collapsed: boolean): void {
 
 setWaveCardCollapsed(localStorage.getItem('rift-wave-card-collapsed') !== 'no');
 
+function preloadGameModules(): ReturnType<typeof importGameModules> {
+  if (!gameModules) {
+    gameModules = importGameModules().catch((error: unknown) => {
+      gameModules = null;
+      throw error;
+    });
+  }
+  return gameModules;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer = 0;
+  const timeout = new Promise<T>((_resolve, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+}
+
+function waitForSceneReady(timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let offState: () => void = () => undefined;
+    let offError: () => void = () => undefined;
+    const timer = window.setTimeout(() => {
+      offState();
+      offError();
+      reject(new Error('Сцена не ответила вовремя'));
+    }, timeoutMs);
+    const finish = (error?: Error) => {
+      window.clearTimeout(timer);
+      offState();
+      offError();
+      if (error) reject(error);
+      else resolve();
+    };
+    offState = on<HudState>('td:state', () => finish());
+    offError = on<string>('td:load-error', (asset) => finish(new Error(`Не загружен ресурс ${asset}`)));
+  });
+}
+
 async function ensureGame(): Promise<void> {
   if (gameLoad) return gameLoad;
   gameLoad = (async () => {
-    const ready = new Promise<void>((resolve) => {
-      const off = on<HudState>('td:state', () => { off(); resolve(); });
-    });
-    const [{ default: Phaser }, { GameScene }] = await Promise.all([import('phaser'), import('./game/GameScene')]);
-    new Phaser.Game({
+    const [{ default: Phaser }, { GameScene }] = await withTimeout(preloadGameModules(), 12_000, 'Движок загружается слишком долго');
+    const ready = waitForSceneReady(15_000);
+    gameInstance = new Phaser.Game({
       type: Phaser.AUTO, parent: 'game', width: GAME_WIDTH, height: GAME_HEIGHT, backgroundColor: '#101522', antialias: true,
       render: { pixelArt: false, roundPixels: true }, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [GameScene],
     });
     await ready;
-  })();
+  })().catch((error: unknown) => {
+    gameInstance?.destroy(true);
+    gameInstance = null;
+    gameLoad = null;
+    throw error;
+  });
   return gameLoad;
 }
 
+const beginButton = get<HTMLButtonElement>('begin');
+const loadStatus = get('load-status');
+const warmGame = () => { void preloadGameModules().catch(() => undefined); };
+const idleWindow = window as Window & { requestIdleCallback?: Window['requestIdleCallback'] };
+if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(warmGame, { timeout: 900 });
+else window.setTimeout(warmGame, 250);
+beginButton.addEventListener('pointerenter', warmGame, { once: true });
+beginButton.addEventListener('focus', warmGame, { once: true });
+on<number>('td:load-progress', (progress) => {
+  if (!beginButton.disabled) return;
+  const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+  beginButton.textContent = `ЗАГРУЗКА ${percent}%`;
+  loadStatus.textContent = `Получаем оптимизированные ассеты · ${percent}%`;
+});
+
 get<HTMLButtonElement>('begin').addEventListener('click', async () => {
+  if (loadFailed) {
+    window.location.reload();
+    return;
+  }
   audio.unlock();
-  const begin = get<HTMLButtonElement>('begin');
+  const begin = beginButton;
   begin.disabled = true;
-  begin.textContent = 'ЗАГРУЗКА ДОЛИНЫ…';
+  begin.textContent = 'ПОДГОТОВКА ДВИЖКА…';
+  loadStatus.classList.remove('error');
+  loadStatus.textContent = 'Запуск движка и карты…';
   localStorage.setItem('rift-difficulty', selectedDifficulty);
-  await ensureGame();
-  get('start-screen').classList.add('hidden');
-  emit('td:action', { type: 'begin' });
-  if (!isTestMode && localStorage.getItem('rift-tutorial-seen') !== 'yes') showTutorial(0);
+  localStorage.setItem('rift-map', selectedMap);
+  try {
+    await ensureGame();
+    get('start-screen').classList.add('hidden');
+    emit('td:action', { type: 'begin' });
+    loadStatus.textContent = '';
+    if (!isTestMode && localStorage.getItem('rift-tutorial-seen') !== 'yes') showTutorial(0);
+  } catch {
+    loadFailed = true;
+    begin.disabled = false;
+    begin.textContent = 'ПОВТОРИТЬ ЗАГРУЗКУ';
+    loadStatus.classList.add('error');
+    loadStatus.textContent = navigator.onLine ? 'Загрузка прервалась. Нажмите ещё раз для безопасного перезапуска.' : 'Нет соединения с сетью. Подключитесь и повторите.';
+    get('announcer').textContent = loadStatus.textContent;
+  }
 });
 get<HTMLButtonElement>('start-wave').addEventListener('click', () => emit('td:action', { type: 'start-wave' }));
 get<HTMLButtonElement>('wave-toggle').addEventListener('click', () => setWaveCardCollapsed(!get('wave-card').classList.contains('collapsed')));
@@ -227,7 +326,13 @@ get<HTMLButtonElement>('sell').addEventListener('click', () => emit('td:action',
 get<HTMLButtonElement>('target-mode').addEventListener('click', () => emit('td:action', { type: 'target' }));
 get<HTMLButtonElement>('hero-stance').addEventListener('click', () => emit('td:action', { type: 'hero-stance' }));
 get<HTMLButtonElement>('hero-stop').addEventListener('click', () => emit('td:action', { type: 'hero-stop' }));
-get<HTMLButtonElement>('restart').addEventListener('click', () => window.location.reload());
+get<HTMLButtonElement>('restart').addEventListener('click', () => {
+  if (latestState?.result === 'victory' && latestState.mapNumber < latestState.mapTotal) {
+    selectedMap = MAP_ORDER[latestState.mapNumber];
+    localStorage.setItem('rift-map', selectedMap);
+  }
+  window.location.reload();
+});
 document.querySelectorAll<HTMLButtonElement>('[data-tower]').forEach((button) => button.addEventListener('click', () => emit('td:action', { type: 'build', tower: button.dataset.tower as TowerType })));
 document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => button.addEventListener('click', () => emit('td:action', { type: 'ability', key: button.dataset.ability })));
 get<HTMLButtonElement>('music').addEventListener('click', () => {
@@ -246,6 +351,14 @@ document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((butto
     selectedDifficulty = button.dataset.difficulty as Difficulty;
     localStorage.setItem('rift-difficulty', selectedDifficulty);
     updateDifficultyPicker();
+  });
+});
+
+document.querySelectorAll<HTMLButtonElement>('[data-map]').forEach((button) => {
+  button.addEventListener('click', () => {
+    selectedMap = button.dataset.map as MapId;
+    localStorage.setItem('rift-map', selectedMap);
+    updateMapPicker();
   });
 });
 
@@ -323,6 +436,7 @@ on<HudState>('td:state', (state) => {
 });
 updateAudioButtons();
 updateDifficultyPicker();
+updateMapPicker();
 applyAccessibility();
 
 function updateDifficultyPicker(): void {
@@ -331,6 +445,19 @@ function updateDifficultyPicker(): void {
     button.classList.toggle('active', selected);
     button.setAttribute('aria-checked', String(selected));
   });
+}
+
+function updateMapPicker(): void {
+  const map = MAPS[selectedMap];
+  document.querySelectorAll<HTMLButtonElement>('[data-map]').forEach((button) => {
+    const id = button.dataset.map as MapId;
+    const selected = id === selectedMap;
+    button.classList.toggle('active', selected);
+    button.classList.toggle('completed', localStorage.getItem(`rift-map-${id}-won`) === 'yes');
+    button.setAttribute('aria-checked', String(selected));
+  });
+  get('start-map-copy').textContent = `${map.name}: ${map.description}`;
+  beginButton.textContent = `НАЧАТЬ · КАРТА ${roman(map.number)}`;
 }
 
 function updateAudioButtons(): void {
@@ -345,15 +472,17 @@ function renderHud(state: HudState): void {
   get('wave-total').textContent = String(state.totalWaves);
   get('remaining').textContent = String(state.remaining);
   get('score').textContent = state.score.toLocaleString('ru-RU');
+  get('brand-map-kicker').textContent = `КАРТА ${roman(state.mapNumber)} ИЗ ${state.mapTotal}`;
+  get('brand-map-name').textContent = state.mapName.toUpperCase();
   get('difficulty-badge').textContent = state.difficultyName.toUpperCase();
   get('wave-title').textContent = state.waveTitle;
   get('wave-intel').textContent = state.waveIntel;
   const hintedWave = Math.max(1, state.waveActive ? state.wave : state.wave + 1);
-  renderWaveBriefing(hintedWave, state.waveActive, state.difficulty);
+  renderWaveBriefing(hintedWave, state.waveActive, state.difficulty, state.mapGoldMultiplier);
   get('strategy-hint').textContent = strategyHint(hintedWave);
   get('countdown').textContent = state.waveActive ? 'ИДЁТ ВОЛНА' : `00:${Math.ceil(state.countdown).toString().padStart(2, '0')}`;
   get<HTMLButtonElement>('start-wave').disabled = state.waveActive || state.wave >= state.totalWaves || state.result !== 'playing';
-  const bonus = earlyStartBonus(state.countdown, EARLY_START_GOLD_PER_SECOND * DIFFICULTIES[state.difficulty].earlyStartGold);
+  const bonus = earlyStartBonus(state.countdown, EARLY_START_GOLD_PER_SECOND * DIFFICULTIES[state.difficulty].earlyStartGold * state.mapGoldMultiplier);
   get<HTMLButtonElement>('start-wave').innerHTML = state.waveActive ? 'Волна в бою' : `Начать досрочно <kbd>+◈ ${bonus}</kbd>`;
   get('pause').textContent = state.paused ? '▶' : 'Ⅱ';
   get('speed').textContent = `×${state.speed}`;
@@ -376,7 +505,7 @@ function renderHud(state: HudState): void {
   if (tutorialStep === 4 && (state.selectedTower?.level ?? 0) > 1) showTutorial(-1);
 }
 
-function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Difficulty): void {
+function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Difficulty, mapGoldMultiplier: number): void {
   get('wave-kicker').textContent = active ? `ВОЛНА ${waveNumber} В БОЮ` : `СЛЕДУЮЩАЯ УГРОЗА · ВОЛНА ${waveNumber}`;
   const wave = WAVES[Math.min(WAVES.length - 1, Math.max(0, waveNumber - 1))];
   const briefingKey = `${waveNumber}-${difficulty}`;
@@ -393,7 +522,7 @@ function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Dif
   }).join('');
   rosterElement.setAttribute('aria-label', `Состав волны ${waveNumber}: ${roster.map(({ type, count }) => `${ENEMIES[type].name}, ${count}`).join('; ')}`);
   get('wave-size').textContent = `${total} ${enemyCountLabel(total)}`;
-  get('wave-reward').textContent = `Зачистка +◈ ${waveClearReward(wave.reward, DIFFICULTIES[difficulty])}`;
+  get('wave-reward').textContent = `Зачистка +◈ ${Math.round(waveClearReward(wave.reward, DIFFICULTIES[difficulty]) * mapGoldMultiplier)}`;
 }
 
 function enemyCountLabel(count: number): string {
@@ -505,14 +634,17 @@ function renderBoss(state: HudState): void {
 
 function renderEnd(result: 'victory' | 'defeat'): void {
   const victory = result === 'victory';
+  const state = latestState;
+  const nextMap = victory && state && state.mapNumber < state.mapTotal ? MAPS[MAP_ORDER[state.mapNumber]] : null;
   const screen = get('end-screen');
   screen.classList.remove('hidden');
   screen.classList.toggle('defeat', !victory);
-  get('end-kicker').textContent = victory ? 'КРИСТАЛЛ СПАСЁН' : 'КРИСТАЛЛ РАЗРУШЕН';
+  get('end-kicker').textContent = victory ? `КАРТА ${roman(state?.mapNumber ?? 1)} ПРОЙДЕНА · КРИСТАЛЛ СПАСЁН` : 'КРИСТАЛЛ РАЗРУШЕН';
   get('end-title').textContent = victory ? 'Разлом запечатан' : 'Долина пала';
   get('end-copy').textContent = victory
-    ? `Все 20 волн и три босса повержены. Счёт: ${latestState?.score.toLocaleString('ru-RU') ?? 0}.`
-    : `Вы продержались до волны ${latestState?.wave ?? 0}. Измените расстановку и попробуйте снова.`;
+    ? `${state?.mapName ?? 'Карта'} защищена: все 20 волн и три босса повержены. Счёт: ${state?.score.toLocaleString('ru-RU') ?? 0}.`
+    : `Вы продержались до волны ${state?.wave ?? 0}. Измените расстановку и попробуйте снова.`;
+  get<HTMLButtonElement>('restart').textContent = nextMap ? `СЛЕДУЮЩАЯ КАРТА · ${nextMap.name.toUpperCase()}` : victory ? 'ПОВТОРИТЬ КАМПАНИЮ' : 'ПОВТОРИТЬ КАРТУ';
   get('end-rune').textContent = victory ? '◆' : '◇';
-  get('announcer').textContent = victory ? 'Победа. Разлом запечатан.' : 'Поражение. Кристалл разрушен.';
+  get('announcer').textContent = victory ? `Победа. ${state?.mapName ?? 'Карта'} пройдена.` : 'Поражение. Кристалл разрушен.';
 }

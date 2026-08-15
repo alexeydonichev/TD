@@ -9,13 +9,15 @@
 
 ## Файлы и кадры
 
-- `public/assets/rift-valley-title.png` — стартовый и финальный фон;
-- `public/assets/rift-valley-map-v3.png` — ландшафт игровой карты с маршрутом и зонами строительства;
+- `public/assets/rift-valley-title.png` — мастер стартового и финального фона;
+- `public/assets/rift-valley-map-v3.png` — мастер ландшафта игровой карты с маршрутом и зонами строительства;
+- `public/assets/frozen-pass-map.png` — мастер второй карты «Ледяной перевал»;
+- `public/assets/ashen-bastion-map.png` — мастер третьей карты «Пепельный бастион»;
 - `public/assets/towers-atlas.png`, сетка 2×2: стрелковая, ледяная, осадная, усиление;
 - `public/assets/units-motion-atlas.png`, сетка 4×2 с кадром 384×512: налётчик, бегун, громила, крылатое порождение, Страж Бездны, Титан Осколков, Владыка Разлома и призрачный огонёк;
-- `public/assets/hero-v2.png` — отдельный полнофигурный спрайт Стража Грозы для игрового поля, 768×768 RGBA.
+- `public/assets/hero-v2.png` — мастер полнофигурного спрайта Стража Грозы, 768×768 RGBA.
 
-Зелёный chroma-key был удалён локально с мягкой матовой границей и despill. В production загружаются только финальные PNG с alpha; исходные key-листы не входят в сборку.
+Зелёный chroma-key был удалён локально с мягкой матовой границей и despill. PNG сохранены как lossless-мастера. В production используются визуально проверенные WebP-производные с теми же размерами кадров и alpha: `rift-valley-title.webp`, три фона карт, `towers-atlas.webp`, `units-motion-atlas.webp`, `hero-v2.webp`. Одновременно загружается только выбранный фон: самый тяжёлый игровой набор после клика остаётся меньше 1,1 MB. Фоны кампании весят примерно 428, 364 и 242 KB.
 
 ## Происхождение
 
@@ -31,9 +33,17 @@
 
 Финальный запрос: «Создай профессиональный оригинальный 2D fantasy tower-defense sprite atlas на строго равномерном плоском `#00ff00` chroma-key фоне. Ровно 8 полнофигурных существ, сетка 4 колонки × 2 ряда, каждое существо целиком внутри своей ячейки, единый высокий ракурс 3/4, направление вправо, читаемый силуэт на 70–110 px, hand-painted game sprite quality, детальные тёмный металл, кристалл, ткань и внутреннее фиолетово-циановое свечение. Верхний ряд слева направо: бронированный налётчик, стремительный двуногий бегун, тяжёлый каменный громила, крылатое порождение. Нижний ряд: Страж Бездны с щитом, массивный Титан Осколков, уникальный Владыка Разлома, маленький призрачный огонёк. Разные пропорции, масса и силуэты; выразительные боевые позы, пригодные для процедурной анимации шага, полёта, наклона и попадания. Без пола, теней, рамок, текста, логотипов, интерфейса, водяных знаков, обрезанных частей и узнаваемых персонажей существующих франшиз».
 
-Снаряды и эффекты созданы процедурно в Phaser, поэтому соответствуют типу атаки и не размываются при масштабировании: стрелковая башня выпускает 1/2/3 стрелы, ледяная — 1/2/3 растущих кристальных осколка, осадная — одно ядро с растущим размером, следом и взрывом. Башни получают отдачу, а противники — походку, парение, наклон в поворотах, разнос по полосе, реакцию на попадание и отдельный эффект гибели. При `reduced motion` движение и длительные эффекты отключаются.
+Снаряды и эффекты созданы процедурно в Phaser, поэтому соответствуют типу атаки и не размываются при масштабировании: стрелковая башня выпускает 1–6 стрел, ледяная — 1–6 растущих кристальных осколков, осадная — одно ядро с растущим размером, следом и взрывом. Башни получают отдачу, а противники — походку, парение, наклон в поворотах, разнос по полосе, реакцию на попадание и отдельный эффект гибели. При `reduced motion` движение и длительные эффекты отключаются.
 
 Ключевой запрос ландшафта v3: встроенная генерация с `rift-valley-title.png` как стилевым референсом; чистая 16:9 карта в высоком ракурсе 3/4, фиолетовая порча слева и золотое святилище справа, дорога по точным игровым точкам `(2%,47%) → (19%,47%) → (19%,21%) → (42.5%,21%) → (42.5%,74%) → (66%,74%) → (66%,37%) → (90%,37%) → (94%,37%)`, мшистые террасы, ручьи, водопады, сосны и рунические камни вокруг свободных строительных зон; без юнитов, башен, UI, текста, логотипов и отсылок к существующим франшизам. После визуального QA выполнен точечный edit только геометрии дороги: удалена смещённая версия и первый поворот перенесён к 19% ширины без изменения остального пейзажа.
+
+## Карты кампании II–III
+
+Обе карты созданы встроенным OpenAI image generation tool. `rift-valley-map-v3.png` использовался только как стилевой референс; композиции, маршруты и окружение сгенерированы заново. Выходы 1672×941 сохранены в PNG-мастерах и локально преобразованы Chromium Canvas в WebP quality 0.72. На стартовом экране превью не загружаются: Phaser запрашивает только фон выбранной карты.
+
+Финальный запрос «Ледяного перевала»: «Production background map for a browser fantasy tower-defense game, 16:9, fixed elevated top-down/isometric view. Original snow-covered mountain pass with deep blue ice ravines, frozen waterfalls, ruined stone watchtowers, cyan crystals, dark fir trees, violet Rift corruption at the left edge and a warm golden sanctuary at the right. One broad continuous pale stone-and-ice road: left upper edge → right → down → right → up → right → down → sanctuary; broad readable buildable terrain pockets on both sides. Cold moonlit cyan/navy lighting, polished painterly game art. No branches, player towers, characters, enemies, labels, symbols, HUD, borders, text, logos or watermark».
+
+Финальный запрос «Пепельного бастиона»: «Production background map for a browser fantasy tower-defense game, 16:9, fixed elevated top-down/isometric view. Original obsidian fortress ruins above lava chasms with magma waterfalls, cracked black basalt, ember-lit dead trees, red-gold runes, violet Rift portal at the left edge and a radiant golden citadel at the right. One broad continuous ash-stone road: left lower edge → right → up → right → up → right → down → citadel; broad readable basalt buildable plateaus. Dramatic red-orange magma light, charcoal rock and violet shadows, polished final-battle game art. No branches, player towers, characters, enemies, labels, symbols, HUD, borders, text, logos or watermark».
 
 ## Страж Грозы v2
 

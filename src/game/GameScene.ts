@@ -1,13 +1,13 @@
 import Phaser from 'phaser';
 import {
-  BUILD_GRID_PADDING, BUILD_GRID_SIZE, CRYSTAL, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, FORBIDDEN_ZONES, GAME_HEIGHT, GAME_WIDTH, HERO,
-  INTERMISSION_SECONDS, MAX_TOWER_LEVEL, PATH, TOWERS, WAVES,
+  BUILD_GRID_PADDING, BUILD_GRID_SIZE, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO,
+  INTERMISSION_SECONDS, MAP_ORDER, MAPS, MAX_TOWER_LEVEL, TOWERS, WAVES,
 } from '../core/config';
 import {
   applySlow, chainTargets, damageOutcome, dashDestination, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy, snapToGrid,
   selectTarget, sellValue, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
-import type { Difficulty, EnemyType, HeroStance, Point, TargetMode, TowerType } from '../core/types';
+import type { Difficulty, EnemyType, HeroStance, MapId, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
 import {
   animateTowerFire, createProjectileImpact, createProjectileVisual, drawTowerDetails, enemyMotionPose,
@@ -111,6 +111,11 @@ interface HeroState {
 
 export interface HudState {
   started: boolean;
+  mapId: MapId;
+  mapName: string;
+  mapNumber: number;
+  mapTotal: number;
+  mapGoldMultiplier: number;
   gold: number;
   lives: number;
   wave: number;
@@ -184,7 +189,8 @@ export class GameScene extends Phaser.Scene {
   private paused = false;
   private speed = 1;
   private difficulty: Difficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
-  private gold = TEST_MODE ? 9999 : DIFFICULTIES[this.difficulty].startingGold;
+  private map = MAPS[localStorage.getItem('rift-map') ?? ''] ?? MAPS.valley;
+  private gold = TEST_MODE ? 9999 : Math.round(DIFFICULTIES[this.difficulty].startingGold * this.map.goldMultiplier);
   private lives = DIFFICULTIES[this.difficulty].crystalLives;
   private score = 0;
   private currentWave = 0;
@@ -222,14 +228,16 @@ export class GameScene extends Phaser.Scene {
   private cameraDragY = 0;
 
   constructor() {
-    super('valley');
+    super('campaign');
   }
 
   preload(): void {
-    this.load.image('valley-landscape', 'assets/rift-valley-map-v3.png');
-    this.load.spritesheet('tower-art', 'assets/towers-atlas.png', { frameWidth: 512, frameHeight: 512 });
-    this.load.spritesheet('unit-motion-art', 'assets/units-motion-atlas.png', { frameWidth: 384, frameHeight: 512 });
-    this.load.image('hero-v2', 'assets/hero-v2.png');
+    this.load.on(Phaser.Loader.Events.PROGRESS, (progress: number) => emit('td:load-progress', progress));
+    this.load.once(Phaser.Loader.Events.FILE_LOAD_ERROR, (file: Phaser.Loader.File) => emit('td:load-error', file.key));
+    this.load.image('map-landscape', this.map.asset);
+    this.load.spritesheet('tower-art', 'assets/towers-atlas.webp', { frameWidth: 512, frameHeight: 512 });
+    this.load.spritesheet('unit-motion-art', 'assets/units-motion-atlas.webp', { frameWidth: 384, frameHeight: 512 });
+    this.load.image('hero-v2', 'assets/hero-v2.webp');
   }
 
   create(): void {
@@ -315,22 +323,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildRouteCache(): void {
+    const path = this.map.path;
     this.routeLengths = [];
     this.routeTotal = 0;
-    for (let index = 0; index < PATH.length - 1; index += 1) {
-      const length = distance(PATH[index], PATH[index + 1]);
+    for (let index = 0; index < path.length - 1; index += 1) {
+      const length = distance(path[index], path[index + 1]);
       this.routeLengths.push(length);
       this.routeTotal += length;
     }
   }
 
   private drawMap(): void {
-    this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'valley-landscape')
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-30).setTint(0xc4d0c8);
+    const { path, crystal: crystalPoint, forbidden } = this.map;
+    this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'map-landscape')
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-30).setTint(this.map.tint);
     const background = this.add.graphics().setDepth(-20);
     background.fillStyle(0x07111d, 0.17).fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     background.lineStyle(3, 0x86b297, 0.48).strokeRoundedRect(12, 12, GAME_WIDTH - 24, GAME_HEIGHT - 24, 24);
-    FORBIDDEN_ZONES.forEach((zone, index) => {
+    forbidden.forEach((zone, index) => {
       background.fillStyle(index % 2 ? 0x64d7b8 : 0xb165e7, 0.035).fillCircle(zone.x, zone.y, zone.radius);
       background.lineStyle(1.5, index % 2 ? 0x82d8bc : 0xbd7bf0, 0.26).strokeCircle(zone.x, zone.y, zone.radius);
       for (let rock = 0; rock < 5; rock += 1) {
@@ -346,17 +356,17 @@ export class GameScene extends Phaser.Scene {
       }
     });
     const road = this.add.graphics().setDepth(-10);
-    road.lineStyle(76, 0x0b0712, 0.18).beginPath().moveTo(PATH[0].x + 5, PATH[0].y + 7);
-    PATH.slice(1).forEach((point) => road.lineTo(point.x + 7, point.y + 10));
+    road.lineStyle(76, 0x0b0712, 0.18).beginPath().moveTo(path[0].x + 5, path[0].y + 7);
+    path.slice(1).forEach((point) => road.lineTo(point.x + 7, point.y + 10));
     road.strokePath();
-    road.lineStyle(61, 0xd9c39e, 0.08).beginPath().moveTo(PATH[0].x, PATH[0].y);
-    PATH.slice(1).forEach((point) => road.lineTo(point.x, point.y));
+    road.lineStyle(61, this.map.routeColor, 0.08).beginPath().moveTo(path[0].x, path[0].y);
+    path.slice(1).forEach((point) => road.lineTo(point.x, point.y));
     road.strokePath();
-    road.lineStyle(2, 0xffe6ac, 0.38).beginPath().moveTo(PATH[0].x, PATH[0].y);
-    PATH.slice(1).forEach((point) => road.lineTo(point.x, point.y));
+    road.lineStyle(2, this.map.routeColor, 0.38).beginPath().moveTo(path[0].x, path[0].y);
+    path.slice(1).forEach((point) => road.lineTo(point.x, point.y));
     road.strokePath();
     const routeRunes = this.add.graphics().setDepth(-8);
-    PATH.slice(1, -1).forEach((point, index) => {
+    path.slice(1, -1).forEach((point, index) => {
       const color = index % 2 ? 0x83edf5 : 0xf3c96e;
       routeRunes.fillStyle(0x0b1018, 0.64).fillCircle(point.x, point.y, 10)
         .lineStyle(2, color, 0.56).strokeCircle(point.x, point.y, 8)
@@ -366,22 +376,22 @@ export class GameScene extends Phaser.Scene {
         ], true);
     });
     const portal = this.add.graphics();
-    portal.fillStyle(0x090713, 1).fillEllipse(PATH[0].x + 8, PATH[0].y, 55, 82);
-    portal.lineStyle(7, 0x9e4cff, 0.9).strokeEllipse(PATH[0].x + 8, PATH[0].y, 55, 82);
-    portal.lineStyle(2, 0xe0a8ff, 0.8).strokeEllipse(PATH[0].x + 8, PATH[0].y, 35, 61);
-    this.add.text(22, 383, 'ПОРТАЛ РАЗЛОМА', { fontFamily: 'Arial', fontSize: '13px', color: '#d6a8ff', fontStyle: 'bold' });
+    portal.fillStyle(0x090713, 1).fillEllipse(path[0].x + 8, path[0].y, 55, 82);
+    portal.lineStyle(7, this.map.accent, 0.9).strokeEllipse(path[0].x + 8, path[0].y, 55, 82);
+    portal.lineStyle(2, 0xe0a8ff, 0.8).strokeEllipse(path[0].x + 8, path[0].y, 35, 61);
+    this.add.text(22, Math.min(GAME_HEIGHT - 30, path[0].y + 53), 'ПОРТАЛ РАЗЛОМА', { fontFamily: 'Arial', fontSize: '13px', color: '#d6a8ff', fontStyle: 'bold' });
     const crystal = this.add.graphics().setDepth(5);
-    crystal.fillStyle(0xf7b34a, 0.22).fillCircle(CRYSTAL.x, CRYSTAL.y, 55);
-    crystal.fillStyle(0x3b2918, 1).fillEllipse(CRYSTAL.x + 7, CRYSTAL.y + 27, 64, 24);
+    crystal.fillStyle(0xf7b34a, 0.22).fillCircle(crystalPoint.x, crystalPoint.y, 55);
+    crystal.fillStyle(0x3b2918, 1).fillEllipse(crystalPoint.x + 7, crystalPoint.y + 27, 64, 24);
     crystal.fillStyle(0xffd56b, 1).fillPoints([
-      { x: CRYSTAL.x, y: CRYSTAL.y - 48 }, { x: CRYSTAL.x + 24, y: CRYSTAL.y - 5 },
-      { x: CRYSTAL.x + 8, y: CRYSTAL.y + 32 }, { x: CRYSTAL.x - 22, y: CRYSTAL.y + 1 },
+      { x: crystalPoint.x, y: crystalPoint.y - 48 }, { x: crystalPoint.x + 24, y: crystalPoint.y - 5 },
+      { x: crystalPoint.x + 8, y: crystalPoint.y + 32 }, { x: crystalPoint.x - 22, y: crystalPoint.y + 1 },
     ], true);
     crystal.lineStyle(4, 0xfff1b2, 0.9).strokePoints([
-      { x: CRYSTAL.x, y: CRYSTAL.y - 48 }, { x: CRYSTAL.x + 24, y: CRYSTAL.y - 5 },
-      { x: CRYSTAL.x + 8, y: CRYSTAL.y + 32 }, { x: CRYSTAL.x - 22, y: CRYSTAL.y + 1 },
+      { x: crystalPoint.x, y: crystalPoint.y - 48 }, { x: crystalPoint.x + 24, y: crystalPoint.y - 5 },
+      { x: crystalPoint.x + 8, y: crystalPoint.y + 32 }, { x: crystalPoint.x - 22, y: crystalPoint.y + 1 },
     ], true);
-    this.add.text(1058, 321, 'КРИСТАЛЛ', { fontFamily: 'Arial', fontSize: '14px', color: '#ffd978', fontStyle: 'bold' });
+    this.add.text(crystalPoint.x - 62, Math.min(GAME_HEIGHT - 26, crystalPoint.y + 61), 'КРИСТАЛЛ', { fontFamily: 'Arial', fontSize: '14px', color: '#ffd978', fontStyle: 'bold' });
   }
 
   private createAtmosphere(): void {
@@ -399,8 +409,10 @@ export class GameScene extends Phaser.Scene {
         });
       }
     }
-    const portalAura = this.add.circle(PATH[0].x + 8, PATH[0].y, 42, 0x8d43e8, 0.03).setStrokeStyle(2, 0xc083ff, 0.32).setDepth(6);
-    const crystalAura = this.add.circle(CRYSTAL.x, CRYSTAL.y, 48, 0xffcb62, 0.025).setStrokeStyle(2, 0xffe6a0, 0.3).setDepth(6);
+    const portal = this.map.path[0];
+    const crystal = this.map.crystal;
+    const portalAura = this.add.circle(portal.x + 8, portal.y, 42, this.map.accent, 0.03).setStrokeStyle(2, this.map.accent, 0.32).setDepth(6);
+    const crystalAura = this.add.circle(crystal.x, crystal.y, 48, 0xffcb62, 0.025).setStrokeStyle(2, 0xffe6a0, 0.3).setDepth(6);
     if (!this.reduceMotion) {
       this.tweens.add({ targets: portalAura, scale: 1.28, alpha: 0.04, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
       this.tweens.add({ targets: crystalAura, scale: 1.2, alpha: 0.06, duration: 2100, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
@@ -408,9 +420,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createHero(): void {
+    const crystal = this.map.crystal;
     const art = this.add.graphics();
     const sprite = this.add.image(0, -40, 'hero-v2').setDisplaySize(88, 88);
-    const container = this.add.container(CRYSTAL.x - 70, CRYSTAL.y + 80, [art, sprite]).setDepth(18);
+    const container = this.add.container(crystal.x - 70, crystal.y + 80, [art, sprite]).setDepth(18);
     this.hero = {
       x: container.x, y: container.y, target: { x: container.x, y: container.y }, hp: HERO.maxHp, mana: HERO.maxMana,
       xp: TEST_MODE ? 260 : 0, level: TEST_MODE ? 3 : 1, alive: true, respawnAt: 0, nextAttackAt: 0, sealUntil: 0,
@@ -427,7 +440,7 @@ export class GameScene extends Phaser.Scene {
     } else if (action.type === 'difficulty' && !this.started) {
       this.difficulty = action.difficulty;
       localStorage.setItem('rift-difficulty', action.difficulty);
-      this.gold = TEST_MODE ? 9999 : DIFFICULTIES[this.difficulty].startingGold;
+      this.gold = TEST_MODE ? 9999 : Math.round(DIFFICULTIES[this.difficulty].startingGold * this.map.goldMultiplier);
       this.lives = DIFFICULTIES[this.difficulty].crystalLives;
       this.countdown = TEST_MODE ? 30 : INTERMISSION_SECONDS * DIFFICULTIES[this.difficulty].intermission;
     } else if (action.type === 'build') this.chooseBuild(action.tower);
@@ -624,8 +637,8 @@ export class GameScene extends Phaser.Scene {
   private placementContext(point: Point, type: TowerType, gold = this.gold) {
     return {
       point, mapWidth: GAME_WIDTH, mapHeight: GAME_HEIGHT, edgePadding: 36, towerRadius: 24,
-      gold, cost: TOWERS[type].cost, path: PATH, pathHalfWidth: 34, crystal: CRYSTAL, crystalRadius: 52,
-      forbidden: FORBIDDEN_ZONES, towers: this.towers.map((tower) => ({ x: tower.x, y: tower.y, radius: 24 })),
+      gold, cost: TOWERS[type].cost, path: this.map.path, pathHalfWidth: 34, crystal: this.map.crystal, crystalRadius: 52,
+      forbidden: this.map.forbidden, towers: this.towers.map((tower) => ({ x: tower.x, y: tower.y, radius: 24 })),
     };
   }
 
@@ -802,8 +815,8 @@ export class GameScene extends Phaser.Scene {
 
   private startNextWave(early: boolean): void {
     if (!this.started || this.waveActive || this.result !== 'playing' || this.currentWave >= WAVES.length) return;
-    if (early) this.gold += earlyStartBonus(this.countdown, EARLY_START_GOLD_PER_SECOND * DIFFICULTIES[this.difficulty].earlyStartGold);
-    if (early) this.score += Math.floor(Math.max(0, this.countdown) * 25 * DIFFICULTIES[this.difficulty].scoreMultiplier);
+    if (early) this.gold += earlyStartBonus(this.countdown, EARLY_START_GOLD_PER_SECOND * DIFFICULTIES[this.difficulty].earlyStartGold * this.map.goldMultiplier);
+    if (early) this.score += Math.floor(Math.max(0, this.countdown) * 25 * DIFFICULTIES[this.difficulty].scoreMultiplier * this.map.scoreMultiplier);
     this.currentWave += 1;
     this.waveActive = true;
     this.spawnQueue = [];
@@ -834,8 +847,8 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.spawnQueue.length && !this.enemies.some((enemy) => enemy.alive)) {
       this.waveActive = false;
-      this.gold += waveClearReward(WAVES[this.currentWave - 1].reward, DIFFICULTIES[this.difficulty]);
-      this.score += Math.round((350 + this.currentWave * 40) * DIFFICULTIES[this.difficulty].scoreMultiplier);
+      this.gold += Math.round(waveClearReward(WAVES[this.currentWave - 1].reward, DIFFICULTIES[this.difficulty]) * this.map.goldMultiplier);
+      this.score += Math.round((350 + this.currentWave * 40) * DIFFICULTIES[this.difficulty].scoreMultiplier * this.map.scoreMultiplier);
       if (this.currentWave >= WAVES.length) this.finish('victory');
       else this.countdown = TEST_MODE ? 0.55 : INTERMISSION_SECONDS * DIFFICULTIES[this.difficulty].intermission;
     }
@@ -863,7 +876,8 @@ export class GameScene extends Phaser.Scene {
     if (!this.reduceMotion) {
       sprite.setAlpha(0).setScale(spriteScale * 0.55);
       this.tweens.add({ targets: sprite, alpha: 1, scaleX: spriteScale, scaleY: spriteScale, duration: 260, ease: 'Back.out' });
-      const portalPulse = this.add.circle(PATH[0].x, PATH[0].y, 16, 0xb54dff, 0.55).setDepth(14);
+      const portal = this.map.path[0];
+      const portalPulse = this.add.circle(portal.x, portal.y, 16, this.map.accent, 0.55).setDepth(14);
       this.tweens.add({ targets: portalPulse, scale: 2.8, alpha: 0, duration: 300, onComplete: () => portalPulse.destroy() });
     }
     return enemy;
@@ -964,7 +978,7 @@ export class GameScene extends Phaser.Scene {
     if (rewarded) {
       const reward = this.enemyDefinition(enemy.type).reward;
       this.gold += reward;
-      this.score += Math.round(reward * 10 * DIFFICULTIES[this.difficulty].scoreMultiplier);
+      this.score += Math.round(reward * 10 * DIFFICULTIES[this.difficulty].scoreMultiplier * this.map.scoreMultiplier);
       this.hero.xp += this.isBossType(enemy.type) ? 240 : 18;
       this.updateHeroLevel();
     }
@@ -992,16 +1006,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private pointAtProgress(progress: number): Point {
+    const path = this.map.path;
     let left = Math.max(0, progress);
     for (let index = 0; index < this.routeLengths.length; index += 1) {
       const length = this.routeLengths[index];
       if (left <= length) {
         const ratio = left / length;
-        return { x: Phaser.Math.Linear(PATH[index].x, PATH[index + 1].x, ratio), y: Phaser.Math.Linear(PATH[index].y, PATH[index + 1].y, ratio) };
+        return { x: Phaser.Math.Linear(path[index].x, path[index + 1].x, ratio), y: Phaser.Math.Linear(path[index].y, path[index + 1].y, ratio) };
       }
       left -= length;
     }
-    return { ...PATH[PATH.length - 1] };
+    return { ...path[path.length - 1] };
   }
 
   private boostAt(tower: TowerUnit): { damage: number; speed: number } {
@@ -1200,8 +1215,8 @@ export class GameScene extends Phaser.Scene {
     this.hero.alive = true;
     this.hero.hp = HERO.maxHp;
     this.hero.mana = HERO.maxMana * 0.6;
-    this.hero.x = CRYSTAL.x - 70;
-    this.hero.y = CRYSTAL.y + 80;
+    this.hero.x = this.map.crystal.x - 70;
+    this.hero.y = this.map.crystal.y + 80;
     this.hero.target = { x: this.hero.x, y: this.hero.y };
     this.hero.moveCommand = false;
     this.hero.container.setPosition(this.hero.x, this.hero.y).setVisible(true);
@@ -1351,6 +1366,7 @@ export class GameScene extends Phaser.Scene {
     localStorage.setItem('rift-best-wave', String(Math.max(previous, this.currentWave)));
     const bestScore = Number(localStorage.getItem('rift-best-score') ?? 0);
     localStorage.setItem('rift-best-score', String(Math.max(bestScore, this.score)));
+    if (result === 'victory') localStorage.setItem(`rift-map-${this.map.id}-won`, 'yes');
     emit('td:sound', result);
     this.emitHud(true);
   }
@@ -1368,7 +1384,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private enemyDefinition(type: EnemyType) {
-    return scaleEnemy(ENEMIES[type], DIFFICULTIES[this.difficulty], Math.max(1, this.currentWave));
+    const enemy = scaleEnemy(ENEMIES[type], DIFFICULTIES[this.difficulty], Math.max(1, this.currentWave));
+    return {
+      ...enemy,
+      maxHp: Math.round(enemy.maxHp * this.map.enemyHp),
+      armor: enemy.armor * this.map.enemyArmor,
+      speed: enemy.speed * this.map.enemySpeed,
+      reward: Math.max(1, Math.round(enemy.reward * this.map.goldMultiplier)),
+    };
   }
 
   private isBossType(type: EnemyType): boolean {
@@ -1423,7 +1446,9 @@ export class GameScene extends Phaser.Scene {
     });
     const upcomingIndex = this.waveActive ? Math.max(0, this.currentWave - 1) : Math.min(this.currentWave, WAVES.length - 1);
     return {
-      started: this.started, gold: this.gold, lives: this.lives, wave: this.currentWave, totalWaves: WAVES.length,
+      started: this.started, mapId: this.map.id, mapName: this.map.name, mapNumber: this.map.number,
+      mapTotal: MAP_ORDER.length, mapGoldMultiplier: this.map.goldMultiplier,
+      gold: this.gold, lives: this.lives, wave: this.currentWave, totalWaves: WAVES.length,
       remaining: this.spawnQueue.length + this.enemies.filter((enemy) => enemy.alive).length,
       countdown: Math.max(0, this.countdown), waveActive: this.waveActive,
       waveTitle: WAVES[upcomingIndex]?.title ?? '', waveIntel: WAVES[upcomingIndex]?.intel ?? '',

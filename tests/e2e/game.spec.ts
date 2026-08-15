@@ -1,5 +1,66 @@
 import { expect, test } from '@playwright/test';
 
+test('оптимизированная сборка быстро запускает холодный матч', async ({ page }) => {
+  const startedAt = Date.now();
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 8_000 });
+  await expect.poll(async () => Boolean(await page.evaluate(() => window.__TD_TEST__))).toBe(true);
+  expect(Date.now() - startedAt).toBeLessThan(8_000);
+  const loadedImages = await page.evaluate(() => performance.getEntriesByType('resource')
+    .map((entry) => entry.name)
+    .filter((url) => /assets\/(rift-valley|towers-atlas|units-motion-atlas|hero-v2)\.(png|webp)/.test(url)));
+  expect(loadedImages.some((url) => url.endsWith('.webp'))).toBe(true);
+  expect(loadedImages.some((url) => url.endsWith('.png'))).toBe(false);
+});
+
+test('ошибка ассета не оставляет игру навсегда в загрузке', async ({ page }) => {
+  await page.route('**/assets/rift-valley-map-v3.webp', (route) => route.abort());
+  await page.goto('/?test=1');
+  const begin = page.locator('#begin');
+  await begin.click();
+  await expect(begin).toHaveText('ПОВТОРИТЬ ЗАГРУЗКУ', { timeout: 15_000 });
+  await expect(begin).toBeEnabled();
+  await expect(page.locator('#load-status')).toHaveClass(/error/);
+  await expect(page.locator('#load-status')).toContainText('Загрузка прервалась');
+});
+
+test('кампания показывает три карты и загружает только выбранную', async ({ page }) => {
+  await page.goto('/?test=1');
+  await expect(page.locator('[data-map]')).toHaveCount(3);
+  await expect(page.locator('[data-map="valley"]')).toContainText('Долина Разлома');
+  await expect(page.locator('[data-map="frozen"]')).toContainText('Ледяной перевал');
+  await expect(page.locator('[data-map="bastion"]')).toContainText('Пепельный бастион');
+  await page.locator('[data-map="frozen"]').click();
+  await expect(page.locator('[data-map="frozen"]')).toHaveClass(/active/);
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 8_000 });
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().mapId)).toBe('frozen');
+  await expect(page.locator('#brand-map-name')).toHaveText('ЛЕДЯНОЙ ПЕРЕВАЛ');
+  const loadedMaps = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name).filter((url) => /-map\.(png|webp)/.test(url)));
+  expect(loadedMaps.some((url) => url.endsWith('/assets/frozen-pass-map.webp'))).toBe(true);
+  expect(loadedMaps.some((url) => url.endsWith('/assets/rift-valley-map-v3.webp'))).toBe(false);
+  expect(loadedMaps.some((url) => url.endsWith('/assets/ashen-bastion-map.webp'))).toBe(false);
+  await page.evaluate(() => window.__TD_TEST__?.spawnStress(1));
+  const frozenStart = await page.evaluate(() => window.__TD_TEST__?.enemies()[0]);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies()[0]?.x ?? 0)).toBeGreaterThan((frozenStart?.x ?? 0) + 20);
+  await page.screenshot({ path: 'test-results/frozen-pass.png', fullPage: true });
+
+  await page.goto('/?test=1');
+  await page.locator('[data-map="bastion"]').click();
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 8_000 });
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().mapId)).toBe('bastion');
+  await expect(page.locator('#brand-map-name')).toHaveText('ПЕПЕЛЬНЫЙ БАСТИОН');
+  const bastionMaps = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name).filter((url) => /-map\.(png|webp)/.test(url)));
+  expect(bastionMaps.some((url) => url.endsWith('/assets/ashen-bastion-map.webp'))).toBe(true);
+  expect(bastionMaps.some((url) => url.endsWith('/assets/frozen-pass-map.webp'))).toBe(false);
+  await page.evaluate(() => window.__TD_TEST__?.spawnStress(1));
+  const bastionStart = await page.evaluate(() => window.__TD_TEST__?.enemies()[0]);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies()[0]?.x ?? 0)).toBeGreaterThan((bastionStart?.x ?? 0) + 20);
+  await page.screenshot({ path: 'test-results/ashen-bastion.png', fullPage: true });
+});
+
 test('полный ускоренный матч: башня, способность, улучшение, следующая волна и победа', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
@@ -8,8 +69,8 @@ test('полный ускоренный матч: башня, способнос
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
   await page.goto('/?test=1');
-  await expect(page.getByRole('button', { name: 'НАЧАТЬ ИГРУ' })).toBeVisible();
-  await page.getByRole('button', { name: 'НАЧАТЬ ИГРУ' }).click();
+  await expect(page.getByRole('button', { name: /НАЧАТЬ · КАРТА I/ })).toBeVisible();
+  await page.getByRole('button', { name: /НАЧАТЬ · КАРТА I/ }).click();
 
   const canvas = page.locator('canvas');
   await expect(canvas).toBeVisible({ timeout: 15_000 });
@@ -89,6 +150,7 @@ test('полный ускоренный матч: башня, способнос
 
   await expect(page.locator('#end-screen')).toBeVisible({ timeout: 25_000 });
   await expect(page.locator('#end-title')).toHaveText('Разлом запечатан');
+  await expect(page.locator('#restart')).toContainText('СЛЕДУЮЩАЯ КАРТА · ЛЕДЯНОЙ ПЕРЕВАЛ');
   await expect(page.locator('#boss-name')).toHaveText('ВЛАДЫКА РАЗЛОМА');
   await expect(page.locator('#wave')).toHaveText('20');
   expect(consoleErrors).toEqual([]);
@@ -110,8 +172,8 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('[data-difficulty="story"] .difficulty-rule')).toHaveCount(3);
   await expect(page.locator('[data-difficulty="story"]')).toContainText('Герой: +15% урона');
   await expect(page.locator('[data-difficulty="standard"]')).toContainText('12 секунд между волнами');
-  await expect(page.locator('[data-difficulty="rift"]')).toContainText('ещё +30% здоровья');
-  await expect(page.locator('[data-difficulty="rift"]')).toContainText('броня +10%');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('+70% здоровья');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('броня +18%');
   await page.screenshot({ path: 'test-results/difficulty-rules.png', fullPage: true });
   await page.locator('[data-difficulty="story"]').click();
   await page.locator('#begin').click();
@@ -134,12 +196,12 @@ test('Повелитель бури создаёт дефицитную экон
   await page.locator('[data-difficulty="rift"]').click();
   await page.locator('#begin').click();
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('#gold')).toHaveText('330');
-  await expect(page.locator('#lives')).toHaveText('10');
+  await expect(page.locator('#gold')).toHaveText('320');
+  await expect(page.locator('#lives')).toHaveText('8');
   await expect(page.locator('#difficulty-badge')).toHaveText('ПОВЕЛИТЕЛЬ БУРИ');
-  await expect(page.locator('#countdown')).toHaveText(/00:0[7-9]/);
-  await expect(page.locator('#start-wave')).toContainText(/\+◈ [5-8]/);
-  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 18');
+  await expect(page.locator('#countdown')).toHaveText(/00:0[5-7]/);
+  await expect(page.locator('#start-wave')).toContainText(/\+◈ [4-5]/);
+  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 16');
 });
 
 test('герой держит фокус, преследует цель и направляет рывок с WASD', async ({ page }) => {

@@ -4,7 +4,7 @@ import {
   matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
-import { DIFFICULTIES, ENEMIES, TOWERS, WAVES } from './config';
+import { DIFFICULTIES, ENEMIES, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -196,6 +196,10 @@ describe('режимы сложности', () => {
     expect(DIFFICULTIES.rift.heroManaRegen).toBeLessThan(1);
     expect(DIFFICULTIES.rift.heroDamageTaken).toBeGreaterThan(1);
     expect(DIFFICULTIES.rift.bossShield).toBeGreaterThan(1);
+    expect(DIFFICULTIES.rift.enemyHp).toBeGreaterThanOrEqual(1.7);
+    expect(DIFFICULTIES.rift.enemyArmor).toBeGreaterThanOrEqual(1.18);
+    expect(DIFFICULTIES.rift.lateEnemyReward).toBeLessThanOrEqual(0.38);
+    expect(DIFFICULTIES.rift.crystalLives).toBe(8);
     Object.values(DIFFICULTIES).forEach((difficulty) => expect(difficulty.rules).toHaveLength(3));
   });
 
@@ -215,11 +219,11 @@ describe('режимы сложности', () => {
     expect(scaled.reward).toBeGreaterThan(ENEMIES.raider.reward);
   });
 
-  it('Разлом дополнительно повышает здоровье на 30% и броню на 10%', () => {
+  it('экспертный режим резко увеличивает здоровье и заметно усиливает броню', () => {
     const scaled = scaleEnemy(ENEMIES.brute, DIFFICULTIES.rift, 20);
-    expect(DIFFICULTIES.rift.enemyHp / 1.28).toBeCloseTo(1.3);
-    expect(scaled.maxHp).toBe(Math.round(ENEMIES.brute.maxHp * 1.28 * 1.3));
-    expect(scaled.armor).toBeCloseTo(ENEMIES.brute.armor * 1.1);
+    expect(DIFFICULTIES.rift.enemyHp).toBe(1.7);
+    expect(scaled.maxHp).toBe(Math.round(ENEMIES.brute.maxHp * 1.7));
+    expect(scaled.armor).toBeCloseTo(ENEMIES.brute.armor * 1.18);
     expect(scaled.speed).toBeGreaterThan(ENEMIES.brute.speed);
     expect(scaled.reward).toBeGreaterThan(0);
   });
@@ -238,11 +242,32 @@ describe('режимы сложности', () => {
       return sum + killIncome + waveClearReward(wave.reward, DIFFICULTIES.standard);
     }, DIFFICULTIES.standard.startingGold);
 
-    expect(campaignIncome).toBeGreaterThan(9_000);
-    expect(campaignIncome).toBeLessThan(10_500);
-    expect(campaignIncome / standardIncome).toBeLessThan(0.58);
+    expect(campaignIncome).toBeGreaterThan(7_000);
+    expect(campaignIncome).toBeLessThan(9_000);
+    expect(campaignIncome / standardIncome).toBeLessThan(0.5);
     expect(scaleEnemy(ENEMIES.raider, DIFFICULTIES.rift, 20).reward)
       .toBeLessThan(scaleEnemy(ENEMIES.raider, DIFFICULTIES.rift, 1).reward);
-    expect(waveClearReward(WAVES[19].reward, DIFFICULTIES.rift)).toBe(160);
+    expect(waveClearReward(WAVES[19].reward, DIFFICULTIES.rift)).toBe(144);
+  });
+});
+
+describe('кампания из трёх карт', () => {
+  it('задаёт три самостоятельных маршрута и фоновых ассета', () => {
+    expect(MAP_ORDER).toEqual(['valley', 'frozen', 'bastion']);
+    expect(new Set(MAP_ORDER.map((id) => MAPS[id].asset)).size).toBe(3);
+    expect(new Set(MAP_ORDER.map((id) => JSON.stringify(MAPS[id].path))).size).toBe(3);
+    MAP_ORDER.forEach((id, index) => {
+      expect(MAPS[id].number).toBe(index + 1);
+      expect(MAPS[id].path.length).toBeGreaterThanOrEqual(8);
+      expect(MAPS[id].forbidden).toHaveLength(4);
+    });
+  });
+
+  it('повышает давление и сокращает экономику на следующих картах', () => {
+    expect(MAPS.frozen.enemyHp).toBeGreaterThan(MAPS.valley.enemyHp);
+    expect(MAPS.bastion.enemyHp).toBeGreaterThan(MAPS.frozen.enemyHp);
+    expect(MAPS.frozen.enemySpeed).toBeGreaterThan(MAPS.valley.enemySpeed);
+    expect(MAPS.bastion.goldMultiplier).toBeLessThan(MAPS.frozen.goldMultiplier);
+    expect(MAPS.frozen.goldMultiplier).toBeLessThan(MAPS.valley.goldMultiplier);
   });
 });

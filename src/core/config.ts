@@ -1,4 +1,4 @@
-import type { DifficultyDefinition, EnemyDefinition, Point, TowerDefinition, WaveDefinition } from './types';
+import type { DifficultyDefinition, EnemyDefinition, MapDefinition, Point, TowerDefinition, WaveDefinition } from './types';
 
 export const GAME_WIDTH = 1200;
 export const GAME_HEIGHT = 700;
@@ -29,16 +29,16 @@ export const DIFFICULTIES: Record<string, DifficultyDefinition> = {
     rules: ['Герой и враги без модификаторов', '20 прочности · 430 стартового золота', '12 секунд между волнами · полная награда'],
   },
   rift: {
-    id: 'rift', name: 'Повелитель бури', description: 'Дефицит ресурсов и нарастающий натиск', enemyHp: 1.28 * 1.3, enemyArmor: 1.1,
-    enemySpeed: 1.1, enemyReward: 0.72, lateEnemyReward: 0.46, waveReward: 0.5, waveHpGrowth: 1.1, waveSpeedGrowth: 1.1,
-    startingGold: 330, crystalLives: 10, scoreMultiplier: 2,
-    heroDamage: 1, heroSpeed: 1, heroManaRegen: 0.8, heroDamageTaken: 1.4, heroRespawn: 1.5,
-    intermission: 0.67, bossShield: 1.35, earlyStartGold: 0.45,
-    rules: ['10 прочности · награды −28% → −54% · зачистка −50%', 'Враги: ещё +30% здоровья · броня +10% · натиск растёт быстрее', '8с подготовки · мана −20% · урон герою +40% · щиты +35%'],
+    id: 'rift', name: 'Повелитель бури', description: 'Экспертный режим без права на пассивную оборону', enemyHp: 1.7, enemyArmor: 1.18,
+    enemySpeed: 1.08, enemyReward: 0.64, lateEnemyReward: 0.38, waveReward: 0.45, waveHpGrowth: 1.1, waveSpeedGrowth: 1.1,
+    startingGold: 320, crystalLives: 8, scoreMultiplier: 3,
+    heroDamage: 0.98, heroSpeed: 1, heroManaRegen: 0.78, heroDamageTaken: 1.5, heroRespawn: 1.6,
+    intermission: 0.5, bossShield: 1.4, earlyStartGold: 0.35,
+    rules: ['8 прочности · 320 золота · награды −36% → −62%', 'Враги: +70% здоровья · броня +18% · скорость +8%', '6с подготовки · мана −22% · урон герою +50% · щиты +40%'],
   },
 };
 
-export const PATH: Point[] = [
+const VALLEY_PATH: Point[] = [
   { x: 28, y: 330 },
   { x: 230, y: 330 },
   { x: 230, y: 145 },
@@ -49,13 +49,52 @@ export const PATH: Point[] = [
   { x: 1082, y: 260 },
 ];
 
-export const CRYSTAL = { x: 1120, y: 260 };
-export const FORBIDDEN_ZONES = [
+const VALLEY_CRYSTAL = { x: 1120, y: 260 };
+const VALLEY_FORBIDDEN = [
   { x: 100, y: 110, radius: 62 },
   { x: 370, y: 350, radius: 56 },
   { x: 675, y: 335, radius: 70 },
   { x: 1010, y: 545, radius: 74 },
 ];
+
+export const MAPS: Record<string, MapDefinition> = {
+  valley: {
+    id: 'valley', number: 1, name: 'Долина Разлома', subtitle: 'ПЕРВЫЙ РУБЕЖ',
+    description: 'Длинный маршрут и просторные позиции для знакомства с кампанией.', asset: 'assets/rift-valley-map-v3.webp',
+    path: VALLEY_PATH, crystal: VALLEY_CRYSTAL, forbidden: VALLEY_FORBIDDEN,
+    enemyHp: 1, enemyArmor: 1, enemySpeed: 1, goldMultiplier: 1, scoreMultiplier: 1,
+    accent: 0x9e4cff, routeColor: 0xffe6ac, tint: 0xc4d0c8,
+  },
+  frozen: {
+    id: 'frozen', number: 2, name: 'Ледяной перевал', subtitle: 'ХОЛОДНЫЙ ФРОНТ',
+    description: 'Узкие снежные террасы: враги крепче, быстрее и приносят меньше золота.', asset: 'assets/frozen-pass-map.webp',
+    path: [
+      { x: 28, y: 150 }, { x: 275, y: 150 }, { x: 275, y: 450 }, { x: 590, y: 450 },
+      { x: 590, y: 250 }, { x: 930, y: 250 }, { x: 930, y: 410 }, { x: 1082, y: 410 },
+    ],
+    crystal: { x: 1120, y: 410 },
+    forbidden: [{ x: 135, y: 525, radius: 68 }, { x: 445, y: 105, radius: 58 }, { x: 745, y: 535, radius: 72 }, { x: 1050, y: 110, radius: 64 }],
+    enemyHp: 1.12, enemyArmor: 1.06, enemySpeed: 1.05, goldMultiplier: 0.92, scoreMultiplier: 1.2,
+    accent: 0x56dfff, routeColor: 0xcff8ff, tint: 0xc3d8ed,
+  },
+  bastion: {
+    id: 'bastion', number: 3, name: 'Пепельный бастион', subtitle: 'ФИНАЛЬНАЯ ОСАДА',
+    description: 'Короткий путь над лавой: элита наступает быстро, а экономика сжата до предела.', asset: 'assets/ashen-bastion-map.webp',
+    path: [
+      { x: 28, y: 370 }, { x: 310, y: 370 }, { x: 310, y: 245 }, { x: 545, y: 245 },
+      { x: 545, y: 120 }, { x: 790, y: 120 }, { x: 790, y: 350 }, { x: 1082, y: 350 },
+    ],
+    crystal: { x: 1120, y: 350 },
+    forbidden: [{ x: 145, y: 115, radius: 70 }, { x: 470, y: 535, radius: 76 }, { x: 690, y: 285, radius: 54 }, { x: 1010, y: 545, radius: 74 }],
+    enemyHp: 1.25, enemyArmor: 1.12, enemySpeed: 1.09, goldMultiplier: 0.84, scoreMultiplier: 1.5,
+    accent: 0xff623d, routeColor: 0xffc06b, tint: 0xe0b09d,
+  },
+};
+
+export const MAP_ORDER = ['valley', 'frozen', 'bastion'] as const;
+export const PATH = VALLEY_PATH;
+export const CRYSTAL = VALLEY_CRYSTAL;
+export const FORBIDDEN_ZONES = VALLEY_FORBIDDEN;
 
 export const TOWERS: Record<string, TowerDefinition> = {
   archer: {

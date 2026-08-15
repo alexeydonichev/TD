@@ -163,6 +163,18 @@ const riftReinforcements = [
   { after: 19, kind: 'target', x: 1100, y: 350 },
   { after: 19, kind: 'target', x: 1070, y: 100 },
 ];
+const riftPriorityUpgrades = [
+  { after: 6, kind: 'upgrade', x: 445, y: 255 },
+  { after: 8, kind: 'upgrade', x: 400, y: 60 },
+  { after: 9, kind: 'upgrade', x: 350, y: 245 },
+  { after: 11, kind: 'upgrade', x: 445, y: 255 },
+  { after: 12, kind: 'upgrade', x: 620, y: 420 },
+  { after: 13, kind: 'upgrade', x: 350, y: 245 },
+  { after: 15, kind: 'upgrade', x: 445, y: 255 },
+  { after: 16, kind: 'upgrade', x: 400, y: 60 },
+  { after: 17, kind: 'upgrade', x: 620, y: 420 },
+  { after: 18, kind: 'upgrade', x: 350, y: 245 },
+];
 const basePending = difficulty === 'rift'
   ? plan.pending.map((action) => {
     if (action.x === 800 && action.y === 640) return { ...action, x: 1050, y: 350 };
@@ -171,7 +183,9 @@ const basePending = difficulty === 'rift'
     return action;
   })
   : plan.pending;
-const pending = [...basePending, ...(difficulty === 'rift' ? riftReinforcements : [])];
+const pending = difficulty === 'rift'
+  ? [...riftPriorityUpgrades, ...basePending, ...riftReinforcements]
+  : [...basePending];
 let spentGold = 0;
 
 function gold() {
