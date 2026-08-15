@@ -196,7 +196,6 @@ let latestState: HudState | null = null;
 let gameLoad: Promise<void> | null = null;
 let gameModules: ReturnType<typeof importGameModules> | null = null;
 let gameInstance: import('phaser').Game | null = null;
-let loadFailed = false;
 let selectedDifficulty = (localStorage.getItem('rift-difficulty') as Difficulty | null) ?? 'standard';
 const storedMap = localStorage.getItem('rift-map') as MapId | null;
 let selectedMap: MapId = storedMap && MAPS[storedMap] ? storedMap : 'valley';
@@ -258,11 +257,12 @@ function waitForSceneReady(timeoutMs: number): Promise<void> {
 async function ensureGame(): Promise<void> {
   if (gameLoad) return gameLoad;
   gameLoad = (async () => {
-    const [{ default: Phaser }, { GameScene }] = await withTimeout(preloadGameModules(), 12_000, 'Движок загружается слишком долго');
-    const ready = waitForSceneReady(15_000);
+    const [{ default: Phaser }, { GameScene }] = await withTimeout(preloadGameModules(), 30_000, 'Движок не ответил за 30 секунд');
+    const ready = waitForSceneReady(30_000);
     gameInstance = new Phaser.Game({
       type: Phaser.AUTO, parent: 'game', width: GAME_WIDTH, height: GAME_HEIGHT, backgroundColor: '#101522', antialias: true,
       render: { pixelArt: false, roundPixels: true }, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [GameScene],
+      loader: { maxParallelDownloads: 2 },
     });
     await ready;
   })().catch((error: unknown) => {
@@ -272,6 +272,23 @@ async function ensureGame(): Promise<void> {
     throw error;
   });
   return gameLoad;
+}
+
+async function ensureGameWithRetry(): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await ensureGame();
+      return;
+    } catch (error: unknown) {
+      lastError = error;
+      if (attempt > 0 || !navigator.onLine) break;
+      beginButton.textContent = 'ВОССТАНАВЛИВАЕМ ЗАГРУЗКУ…';
+      loadStatus.textContent = 'Сеть ответила нестабильно · повторяем без перезагрузки…';
+      await new Promise((resolve) => window.setTimeout(resolve, 650));
+    }
+  }
+  throw lastError;
 }
 
 const beginButton = get<HTMLButtonElement>('begin');
@@ -287,8 +304,7 @@ function prefetchSelectedMap(): void {
   prefetchedMaps.set(selectedMap, link);
 }
 const warmGame = () => {
-  prefetchSelectedMap();
-  void preloadGameModules().catch(() => undefined);
+  void preloadGameModules().then(prefetchSelectedMap).catch(() => undefined);
 };
 const warmModules = () => { void preloadGameModules().catch(() => undefined); };
 const idleWindow = window as Window & { requestIdleCallback?: Window['requestIdleCallback'] };
@@ -304,10 +320,6 @@ on<number>('td:load-progress', (progress) => {
 });
 
 get<HTMLButtonElement>('begin').addEventListener('click', async () => {
-  if (loadFailed) {
-    window.location.reload();
-    return;
-  }
   audio.unlock();
   const begin = beginButton;
   begin.disabled = true;
@@ -317,17 +329,16 @@ get<HTMLButtonElement>('begin').addEventListener('click', async () => {
   localStorage.setItem('rift-difficulty', selectedDifficulty);
   localStorage.setItem('rift-map', selectedMap);
   try {
-    await ensureGame();
+    await ensureGameWithRetry();
     get('start-screen').classList.add('hidden');
     emit('td:action', { type: 'begin' });
     loadStatus.textContent = '';
     if (!isTestMode && localStorage.getItem('rift-tutorial-seen') !== 'yes') showTutorial(0);
   } catch {
-    loadFailed = true;
     begin.disabled = false;
     begin.textContent = 'ПОВТОРИТЬ ЗАГРУЗКУ';
     loadStatus.classList.add('error');
-    loadStatus.textContent = navigator.onLine ? 'Загрузка прервалась. Нажмите ещё раз для безопасного перезапуска.' : 'Нет соединения с сетью. Подключитесь и повторите.';
+    loadStatus.textContent = navigator.onLine ? 'Загрузка прервалась. Повтор продолжит с уже загруженных ресурсов.' : 'Нет соединения с сетью. Подключитесь и повторите.';
     get('announcer').textContent = loadStatus.textContent;
   }
 });

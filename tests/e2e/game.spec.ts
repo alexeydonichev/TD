@@ -25,6 +25,23 @@ test('ошибка ассета не оставляет игру навсегд�
   await expect(page.locator('#load-status')).toContainText('Загрузка прервалась');
 });
 
+test('загрузчик сам восстанавливается после краткого сетевого сбоя', async ({ page }) => {
+  let failedRequests = 0;
+  await page.route('**/assets/rift-valley-map-v3.webp', (route) => {
+    if (failedRequests < 2) {
+      failedRequests += 1;
+      return route.abort();
+    }
+    return route.continue();
+  });
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
+  expect(failedRequests).toBe(2);
+  await expect(page.locator('#start-screen')).toBeHidden();
+});
+
 test('кампания показывает три карты и загружает только выбранную', async ({ page }) => {
   await page.goto('/?test=1');
   await expect(page.locator('[data-map]')).toHaveCount(3);
