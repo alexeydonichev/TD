@@ -4,8 +4,8 @@ import {
   INTERMISSION_SECONDS, MAP_ORDER, MAPS, MAX_TOWER_LEVEL, TOWERS, WAVES,
 } from '../core/config';
 import {
-  applySlow, chainTargets, damageOutcome, dashDestination, distance, earlyStartBonus, loseLives, placementFailure, pointToLineDistance, scaleEnemy, snapToGrid,
-  selectTarget, sellValue, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
+  applySlow, chainTargets, damageOutcome, dashDestination, distance, distanceToPath, earlyStartBonus, loseLives, placementFailure, pointToLineDistance,
+  roundedPath, scaleEnemy, snapToGrid, selectTarget, sellValue, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
 import type { Difficulty, EnemyType, HeroStance, MapId, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
@@ -13,6 +13,9 @@ import {
   animateTowerFire, createProjectileImpact, createProjectileVisual, drawTowerDetails, enemyMotionPose,
   type OffensiveTowerType,
 } from './combatVisuals';
+import {
+  animateHeroAttack, createDashStorm, createLightningBolt, createStormField, createStormShield, createThunderBurst, launchStormSpear,
+} from './heroVisuals';
 
 type Action =
   | { type: 'begin' } | { type: 'build'; tower: TowerType } | { type: 'start-wave' }
@@ -82,7 +85,7 @@ interface Storm {
   y: number;
   endsAt: number;
   nextTick: number;
-  view: Phaser.GameObjects.Graphics;
+  view: Phaser.GameObjects.Container;
 }
 
 interface SpawnEntry { type: EnemyType; at: number }
@@ -173,7 +176,8 @@ declare global {
       defeat: () => void;
       spawnStress: (count: number) => void;
       enemies: () => Array<{ id: number; type: EnemyType; name: string; x: number; y: number }>;
-      metrics: () => { activeEnemies: number; gameObjects: number; averageFrameMs: number; fps: number };
+      metrics: () => { activeEnemies: number; gameObjects: number; averageFrameMs: number; fps: number; maxGroundRoadDeviation: number };
+      visuals: () => { attack: number; q: number; w: number; e: number; r: number };
     };
   }
 }
@@ -214,10 +218,14 @@ export class GameScene extends Phaser.Scene {
   private heroCommandPath!: Phaser.GameObjects.Graphics;
   private abilityPreview!: Phaser.GameObjects.Graphics;
   private hero!: HeroState;
+  private heroSealView: Phaser.GameObjects.Container | null = null;
+  private visualEvents = { attack: 0, q: 0, w: 0, e: 0, r: 0 };
   private aimAbility: 'r' | null = null;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private routePoints: Point[] = [];
   private routeLengths: number[] = [];
   private routeTotal = 0;
+  private routeProgressScale = 1;
   private offAction: (() => void) | null = null;
   private frameSamples: number[] = [];
   private reduceMotion = localStorage.getItem('rift-reduce-motion') === 'on';
@@ -296,6 +304,7 @@ export class GameScene extends Phaser.Scene {
           x: enemy.container.x, y: enemy.container.y,
         })),
         metrics: () => this.getPerformanceMetrics(),
+        visuals: () => ({ ...this.visualEvents }),
       };
     }
   }
@@ -323,7 +332,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildRouteCache(): void {
-    const path = this.map.path;
+    this.routePoints = roundedPath(this.map.path, 30, 8);
+    const path = this.routePoints;
+    const authoredLength = this.map.path.slice(0, -1).reduce((total, point, index) => total + distance(point, this.map.path[index + 1]), 0);
     this.routeLengths = [];
     this.routeTotal = 0;
     for (let index = 0; index < path.length - 1; index += 1) {
@@ -331,10 +342,12 @@ export class GameScene extends Phaser.Scene {
       this.routeLengths.push(length);
       this.routeTotal += length;
     }
+    this.routeProgressScale = authoredLength > 0 ? this.routeTotal / authoredLength : 1;
   }
 
   private drawMap(): void {
-    const { path, crystal: crystalPoint, forbidden } = this.map;
+    const { crystal: crystalPoint, forbidden } = this.map;
+    const path = this.routePoints;
     this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'map-landscape')
       .setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-30).setTint(this.map.tint);
     const background = this.add.graphics().setDepth(-20);
@@ -366,7 +379,7 @@ export class GameScene extends Phaser.Scene {
     path.slice(1).forEach((point) => road.lineTo(point.x, point.y));
     road.strokePath();
     const routeRunes = this.add.graphics().setDepth(-8);
-    path.slice(1, -1).forEach((point, index) => {
+    this.map.path.slice(1, -1).forEach((point, index) => {
       const color = index % 2 ? 0x83edf5 : 0xf3c96e;
       routeRunes.fillStyle(0x0b1018, 0.64).fillCircle(point.x, point.y, 10)
         .lineStyle(2, color, 0.56).strokeCircle(point.x, point.y, 8)
@@ -637,7 +650,7 @@ export class GameScene extends Phaser.Scene {
   private placementContext(point: Point, type: TowerType, gold = this.gold) {
     return {
       point, mapWidth: GAME_WIDTH, mapHeight: GAME_HEIGHT, edgePadding: 36, towerRadius: 24,
-      gold, cost: TOWERS[type].cost, path: this.map.path, pathHalfWidth: 34, crystal: this.map.crystal, crystalRadius: 52,
+      gold, cost: TOWERS[type].cost, path: this.routePoints, pathHalfWidth: 34, crystal: this.map.crystal, crystalRadius: 52,
       forbidden: this.map.forbidden, towers: this.towers.map((tower) => ({ x: tower.x, y: tower.y, radius: 24 })),
     };
   }
@@ -939,7 +952,8 @@ export class GameScene extends Phaser.Scene {
       }
       const slow = enemy.slowUntil > this.simTime ? enemy.slow : 0;
       const phaseMultiplier = this.isBossType(enemy.type) && enemy.phase === 2 ? 1.28 : 1;
-      enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE * phaseMultiplier, slow) * delta / 1000;
+      enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE * phaseMultiplier, slow)
+        * this.routeProgressScale * delta / 1000;
       const point = this.pointAtProgress(enemy.progress);
       const behind = this.pointAtProgress(Math.max(0, enemy.progress - 12));
       const ahead = this.pointAtProgress(Math.min(this.routeTotal, enemy.progress + 12));
@@ -1006,7 +1020,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private pointAtProgress(progress: number): Point {
-    const path = this.map.path;
+    const path = this.routePoints;
     let left = Math.max(0, progress);
     for (let index = 0; index < this.routeLengths.length; index += 1) {
       const length = this.routeLengths[index];
@@ -1190,11 +1204,15 @@ export class GameScene extends Phaser.Scene {
       const target = (focus && inRange.includes(focus) ? focus : null) ?? inRange.sort((a, b) => b.progress - a.progress)[0];
       if (target) {
         this.hero.nextAttackAt = this.simTime + HERO.attackMs;
-        const lightning = this.add.graphics().setDepth(31).lineStyle(3, 0x9ef5ff, 0.9).beginPath().moveTo(this.hero.x, this.hero.y).lineTo(target.container.x, target.container.y).strokePath();
-        this.tweens.add({ targets: lightning, alpha: 0, duration: 110, onComplete: () => lightning.destroy() });
+        const targetPoint = { x: target.container.x, y: target.container.y - 8 };
+        this.visualEvents.attack += 1;
+        animateHeroAttack(this, this.hero.sprite, targetPoint, this.reduceMotion);
+        launchStormSpear(this, { x: this.hero.x, y: this.hero.y - 38 }, targetPoint, this.reduceMotion);
         this.hitEnemy(target, HERO.attackDamage * difficulty.heroDamage * (TEST_MODE ? 2.5 : 1), true);
+        emit('td:sound', 'shot');
       }
     }
+    if (this.heroSealView?.active) this.heroSealView.setPosition(this.hero.x, this.hero.y).setVisible(true);
     this.drawHeroArt();
     this.drawHeroCommand(focus);
   }
@@ -1204,6 +1222,8 @@ export class GameScene extends Phaser.Scene {
     this.hero.hp = 0;
     this.hero.respawnAt = this.simTime + HERO.respawnSeconds * 1000 * DIFFICULTIES[this.difficulty].heroRespawn;
     this.hero.container.setVisible(false);
+    this.heroSealView?.destroy(true);
+    this.heroSealView = null;
     this.heroTargetMarker.clear();
     this.heroFocusMarker.clear();
     this.heroCommandPath.clear();
@@ -1259,6 +1279,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private castChainLightning(): void {
+    this.visualEvents.q += 1;
+    createThunderBurst(this, { x: this.hero.x, y: this.hero.y - 24 }, this.reduceMotion, 0.72);
     const candidates = this.enemies.map((enemy) => ({ id: enemy.id, x: enemy.container.x, y: enemy.container.y, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: this.enemyDefinition(enemy.type).flying, alive: enemy.alive }));
     const focus = this.focusedEnemy();
     const focusedFirst = focus && distance(this.hero, focus.container) <= 285 ? focus : null;
@@ -1269,14 +1291,19 @@ export class GameScene extends Phaser.Scene {
     ids.forEach((id, index) => {
       const enemy = this.enemies.find((candidate) => candidate.id === id);
       if (!enemy) return;
-      const line = this.add.graphics().setDepth(34).lineStyle(5 - Math.min(index, 3), 0xa8f8ff, 0.95).beginPath().moveTo(from.x, from.y).lineTo(enemy.container.x, enemy.container.y).strokePath();
-      this.tweens.add({ targets: line, alpha: 0, duration: 180, onComplete: () => line.destroy() });
+      const boltFrom = { ...from };
+      const boltTo = { x: enemy.container.x, y: enemy.container.y - 8 };
+      this.time.delayedCall(index * (this.reduceMotion ? 18 : 55), () => {
+        createLightningBolt(this, boltFrom, boltTo, this.reduceMotion, Math.max(0.58, 1.12 - index * 0.08));
+        createThunderBurst(this, boltTo, this.reduceMotion, Math.max(0.52, 0.85 - index * 0.04));
+      });
       this.hitEnemy(enemy, HERO.abilities.q.damage * DIFFICULTIES[this.difficulty].heroDamage * (1 - index * 0.08), true);
-      from = { x: enemy.container.x, y: enemy.container.y };
+      from = boltTo;
     });
   }
 
   private castDash(): void {
+    this.visualEvents.w += 1;
     const horizontal = (this.keys.D.isDown ? 1 : 0) - (this.keys.A.isDown ? 1 : 0);
     const vertical = (this.keys.S.isDown ? 1 : 0) - (this.keys.W.isDown ? 1 : 0);
     const focus = this.focusedEnemy();
@@ -1292,21 +1319,24 @@ export class GameScene extends Phaser.Scene {
     this.hero.target = to;
     this.hero.moveCommand = false;
     this.hero.container.setPosition(to.x, to.y);
-    const trail = this.add.graphics().setDepth(17)
-      .lineStyle(22, 0x42dff5, 0.16).beginPath().moveTo(from.x, from.y).lineTo(to.x, to.y).strokePath()
-      .lineStyle(5, 0xd6fbff, 0.78).beginPath().moveTo(from.x, from.y).lineTo(to.x, to.y).strokePath()
-      .fillStyle(0xffdd79, 0.7).fillCircle(to.x, to.y, 11);
-    this.tweens.add({ targets: trail, alpha: 0, duration: 320, onComplete: () => trail.destroy() });
+    createDashStorm(this, from, to, this.reduceMotion);
   }
 
   private castSeal(): void {
+    this.visualEvents.e += 1;
     this.hero.sealUntil = this.simTime + HERO.abilities.e.duration * 1000;
-    const seal = this.add.circle(this.hero.x, this.hero.y, 230, 0x68dcff, 0.08).setStrokeStyle(3, 0xc6f7ff, 0.7).setDepth(8);
-    this.tweens.add({ targets: seal, alpha: 0, duration: HERO.abilities.e.duration * 1000, onComplete: () => seal.destroy() });
+    this.heroSealView?.destroy(true);
+    const seal = createStormShield(this, { x: this.hero.x, y: this.hero.y }, this.reduceMotion);
+    this.heroSealView = seal;
+    this.time.delayedCall(HERO.abilities.e.duration * 1000, () => {
+      if (this.heroSealView === seal) this.heroSealView = null;
+      if (seal.active) seal.destroy(true);
+    });
   }
 
   private castStorm(center: Point): void {
-    const view = this.add.graphics().setDepth(12).fillStyle(0x6640da, 0.16).fillCircle(center.x, center.y, 155).lineStyle(4, 0xa8ecff, 0.75).strokeCircle(center.x, center.y, 155);
+    this.visualEvents.r += 1;
+    const view = createStormField(this, center, this.reduceMotion);
     this.storms.push({ x: center.x, y: center.y, endsAt: this.simTime + HERO.abilities.r.duration * 1000, nextTick: this.simTime, view });
   }
 
@@ -1318,10 +1348,14 @@ export class GameScene extends Phaser.Scene {
         this.storms.splice(index, 1);
       } else if (this.simTime >= storm.nextTick) {
         storm.nextTick = this.simTime + 500;
-        this.enemies.filter((enemy) => enemy.alive && distance(enemy.container, storm) <= 155)
-          .forEach((enemy) => this.hitEnemy(enemy, HERO.abilities.r.damage * DIFFICULTIES[this.difficulty].heroDamage, true));
-        const bolt = this.add.line(0, 0, storm.x + Phaser.Math.Between(-130, 130), storm.y - 170, storm.x + Phaser.Math.Between(-100, 100), storm.y + Phaser.Math.Between(-90, 90), 0xd2f7ff, 0.8).setOrigin(0).setLineWidth(3).setDepth(32);
-        this.tweens.add({ targets: bolt, alpha: 0, duration: 130, onComplete: () => bolt.destroy() });
+        const impacted = this.enemies.filter((enemy) => enemy.alive && distance(enemy.container, storm) <= 155);
+        const targets = impacted.map((enemy) => ({ x: enemy.container.x, y: enemy.container.y - 7 }));
+        impacted.forEach((enemy) => this.hitEnemy(enemy, HERO.abilities.r.damage * DIFFICULTIES[this.difficulty].heroDamage, true));
+        const strike = targets.length
+          ? targets[Phaser.Math.Between(0, targets.length - 1)]
+          : { x: storm.x + Phaser.Math.Between(-105, 105), y: storm.y + Phaser.Math.Between(-95, 95) };
+        createLightningBolt(this, { x: strike.x + Phaser.Math.Between(-18, 18), y: Math.max(5, strike.y - 210) }, strike, this.reduceMotion, 1.28);
+        createThunderBurst(this, strike, this.reduceMotion, 1.05);
       }
     }
   }
@@ -1362,6 +1396,10 @@ export class GameScene extends Phaser.Scene {
     if (this.result !== 'playing') return;
     this.result = result;
     this.paused = false;
+    this.heroSealView?.destroy(true);
+    this.heroSealView = null;
+    this.storms.forEach((storm) => storm.view.destroy(true));
+    this.storms = [];
     const previous = Number(localStorage.getItem('rift-best-wave') ?? 0);
     localStorage.setItem('rift-best-wave', String(Math.max(previous, this.currentWave)));
     const bestScore = Number(localStorage.getItem('rift-best-score') ?? 0);
@@ -1416,11 +1454,13 @@ export class GameScene extends Phaser.Scene {
     const averageFrameMs = this.frameSamples.length
       ? this.frameSamples.reduce((sum, value) => sum + value, 0) / this.frameSamples.length
       : 0;
+    const groundEnemies = this.enemies.filter((enemy) => enemy.alive && !this.enemyDefinition(enemy.type).flying);
     return {
       activeEnemies: this.enemies.filter((enemy) => enemy.alive).length,
       gameObjects: this.children.list.length,
       averageFrameMs: Number(averageFrameMs.toFixed(2)),
       fps: averageFrameMs > 0 ? Number((1000 / averageFrameMs).toFixed(1)) : 0,
+      maxGroundRoadDeviation: Number(Math.max(0, ...groundEnemies.map((enemy) => distanceToPath(enemy.container, this.routePoints))).toFixed(2)),
     };
   }
 

@@ -273,11 +273,25 @@ async function ensureGame(): Promise<void> {
 
 const beginButton = get<HTMLButtonElement>('begin');
 const loadStatus = get('load-status');
-const warmGame = () => { void preloadGameModules().catch(() => undefined); };
+const prefetchedMaps = new Map<MapId, HTMLLinkElement>();
+function prefetchSelectedMap(): void {
+  if (prefetchedMaps.has(selectedMap)) return;
+  const link = document.createElement('link');
+  link.rel = 'prefetch';
+  link.as = 'image';
+  link.href = MAPS[selectedMap].asset;
+  document.head.append(link);
+  prefetchedMaps.set(selectedMap, link);
+}
+const warmGame = () => {
+  prefetchSelectedMap();
+  void preloadGameModules().catch(() => undefined);
+};
+const warmModules = () => { void preloadGameModules().catch(() => undefined); };
 const idleWindow = window as Window & { requestIdleCallback?: Window['requestIdleCallback'] };
-if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(warmGame, { timeout: 900 });
-else window.setTimeout(warmGame, 250);
-beginButton.addEventListener('pointerenter', warmGame, { once: true });
+if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(warmModules, { timeout: 900 });
+else window.setTimeout(warmModules, 250);
+beginButton.addEventListener('pointerdown', warmGame, { once: true });
 beginButton.addEventListener('focus', warmGame, { once: true });
 on<number>('td:load-progress', (progress) => {
   if (!beginButton.disabled) return;
@@ -359,6 +373,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-map]').forEach((button) => {
     selectedMap = button.dataset.map as MapId;
     localStorage.setItem('rift-map', selectedMap);
     updateMapPicker();
+    warmGame();
   });
 });
 

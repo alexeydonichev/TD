@@ -44,6 +44,7 @@ test('кампания показывает три карты и загружа�
   await page.evaluate(() => window.__TD_TEST__?.spawnStress(1));
   const frozenStart = await page.evaluate(() => window.__TD_TEST__?.enemies()[0]);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies()[0]?.x ?? 0)).toBeGreaterThan((frozenStart?.x ?? 0) + 20);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().maxGroundRoadDeviation ?? 999)).toBeLessThanOrEqual(6);
   await page.screenshot({ path: 'test-results/frozen-pass.png', fullPage: true });
 
   await page.goto('/?test=1');
@@ -58,6 +59,7 @@ test('кампания показывает три карты и загружа�
   await page.evaluate(() => window.__TD_TEST__?.spawnStress(1));
   const bastionStart = await page.evaluate(() => window.__TD_TEST__?.enemies()[0]);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies()[0]?.x ?? 0)).toBeGreaterThan((bastionStart?.x ?? 0) + 20);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().maxGroundRoadDeviation ?? 999)).toBeLessThanOrEqual(6);
   await page.screenshot({ path: 'test-results/ashen-bastion.png', fullPage: true });
 });
 
@@ -137,6 +139,7 @@ test('полный ускоренный матч: башня, способнос
   await page.getByRole('button', { name: /Начать досрочно/ }).click();
   await page.locator('[data-ability="e"]').click();
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.abilities.e.cooldown ?? 0)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().e ?? 0)).toBe(1);
 
   await page.getByRole('button', { name: /Улучшить/ }).click();
   await expect(page.locator('#tower-level')).toHaveText('2');
@@ -234,6 +237,7 @@ test('герой держит фокус, преследует цель и на�
   await page.keyboard.press('Shift');
   await page.keyboard.up('KeyA');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x)).toBeLessThan(dashStart - 150);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().w ?? 0)).toBe(1);
 
   const moveStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
   await page.mouse.click(box.x + box.width * (1050 / 1200), box.y + box.height * (450 / 700), { button: 'right' });
@@ -244,6 +248,9 @@ test('герой держит фокус, преследует цель и на�
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.stance)).toBe('guard');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.command)).toBe('hold');
   await expect(page.locator('#hero-stance')).toContainText('ОХРАНА');
+
+  await page.keyboard.press('KeyQ');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().q ?? 0)).toBe(1);
 
   const manaBeforeAim = await page.evaluate(() => window.__TD_TEST__!.state().hero.mana);
   await page.locator('[data-ability="r"]').click();
@@ -261,6 +268,8 @@ test('герой держит фокус, преследует цель и на�
   await page.mouse.click(box.x + box.width * (600 / 1200), box.y + box.height * (350 / 700));
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.aimAbility)).toBeNull();
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.abilities.r.cooldown ?? 0)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().r ?? 0)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().attack ?? 0), { timeout: 8_000 }).toBeGreaterThan(0);
   await page.screenshot({ path: 'test-results/hero-tactics.png', fullPage: true });
 });
 
@@ -401,6 +410,7 @@ test('профиль держит 100 активных противников б
   expect(metrics!.activeEnemies).toBeGreaterThanOrEqual(100);
   expect(metrics!.gameObjects).toBeLessThan(500);
   expect(metrics!.fps).toBeGreaterThanOrEqual(30);
+  expect(metrics!.maxGroundRoadDeviation).toBeLessThanOrEqual(6);
 });
 
 test('компактный HUD остаётся доступным в узком и квадратном окне', async ({ page }) => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, earlyStartBonus, isWaveComplete, loseLives,
-  matchResult, placementFailure, pointToLineDistance, scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
+  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, distanceToPath, earlyStartBonus, isWaveComplete, loseLives,
+  matchResult, placementFailure, pointToLineDistance, roundedPath, scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
 import { DIFFICULTIES, ENEMIES, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
@@ -269,5 +269,16 @@ describe('кампания из трёх карт', () => {
     expect(MAPS.frozen.enemySpeed).toBeGreaterThan(MAPS.valley.enemySpeed);
     expect(MAPS.bastion.goldMultiplier).toBeLessThan(MAPS.frozen.goldMultiplier);
     expect(MAPS.frozen.goldMultiplier).toBeLessThan(MAPS.valley.goldMultiplier);
+  });
+
+  it('скругляет повороты внутри дорожного полотна без срезания маршрута', () => {
+    const raw = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    const route = roundedPath(raw, 30, 8);
+    expect(route[0]).toEqual(raw[0]);
+    expect(route.at(-1)).toEqual(raw.at(-1));
+    expect(route.length).toBeGreaterThan(raw.length);
+    expect(route.some((point) => point.x > 70 && point.x < 100 && point.y > 0 && point.y < 30)).toBe(true);
+    route.forEach((point) => expect(distanceToPath(point, route)).toBeLessThan(0.001));
+    expect(distanceToPath({ x: 50, y: 6 }, route)).toBeLessThanOrEqual(6);
   });
 });

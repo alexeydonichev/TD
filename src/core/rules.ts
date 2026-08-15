@@ -132,6 +132,51 @@ export function pointToLineDistance(point: Point, from: Point, to: Point): numbe
   return pointSegmentDistance(point, from, to);
 }
 
+export function distanceToPath(point: Point, path: Point[]): number {
+  if (!path.length) return Number.POSITIVE_INFINITY;
+  if (path.length === 1) return distance(point, path[0]);
+  let closest = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    closest = Math.min(closest, pointSegmentDistance(point, path[index], path[index + 1]));
+  }
+  return closest;
+}
+
+export function roundedPath(points: Point[], cornerRadius = 30, samplesPerCorner = 8): Point[] {
+  if (points.length < 3 || cornerRadius <= 0) return points.map((point) => ({ ...point }));
+  const rounded: Point[] = [{ ...points[0] }];
+  const samples = Math.max(2, Math.floor(samplesPerCorner));
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const corner = points[index];
+    const next = points[index + 1];
+    const incomingLength = distance(previous, corner);
+    const outgoingLength = distance(corner, next);
+    if (incomingLength <= 0.001 || outgoingLength <= 0.001) continue;
+    const incoming = { x: (corner.x - previous.x) / incomingLength, y: (corner.y - previous.y) / incomingLength };
+    const outgoing = { x: (next.x - corner.x) / outgoingLength, y: (next.y - corner.y) / outgoingLength };
+    const cross = incoming.x * outgoing.y - incoming.y * outgoing.x;
+    if (Math.abs(cross) < 0.001) {
+      rounded.push({ ...corner });
+      continue;
+    }
+    const cut = Math.min(cornerRadius, incomingLength * 0.42, outgoingLength * 0.42);
+    const entry = { x: corner.x - incoming.x * cut, y: corner.y - incoming.y * cut };
+    const exit = { x: corner.x + outgoing.x * cut, y: corner.y + outgoing.y * cut };
+    if (distance(rounded[rounded.length - 1], entry) > 0.01) rounded.push(entry);
+    for (let sample = 1; sample <= samples; sample += 1) {
+      const t = sample / samples;
+      const inverse = 1 - t;
+      rounded.push({
+        x: inverse * inverse * entry.x + 2 * inverse * t * corner.x + t * t * exit.x,
+        y: inverse * inverse * entry.y + 2 * inverse * t * corner.y + t * t * exit.y,
+      });
+    }
+  }
+  rounded.push({ ...points[points.length - 1] });
+  return rounded;
+}
+
 export function dashDestination(origin: Point, input: Point, focus: Point | null, pointer: Point, maxDistance: number): Point {
   const inputLength = Math.hypot(input.x, input.y);
   const target = inputLength > 0

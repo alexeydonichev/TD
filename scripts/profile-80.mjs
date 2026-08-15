@@ -13,7 +13,12 @@ await page.waitForFunction(() => Boolean(window.__TD_TEST__), null, { timeout: 1
 await page.evaluate(() => window.__TD_TEST__?.spawnStress(100));
 await page.waitForTimeout(5_000);
 const metrics = await page.evaluate(() => window.__TD_TEST__?.metrics());
-const proof = { verdict: metrics && metrics.activeEnemies >= 80 && metrics.gameObjects < 500 && metrics.fps >= 30 && !errors.length ? 'PASS' : 'FAIL', metrics, errors };
+const proof = {
+  verdict: metrics && metrics.activeEnemies >= 80 && metrics.gameObjects < 500 && metrics.fps >= 30
+    && metrics.maxGroundRoadDeviation <= 6 && !errors.length ? 'PASS' : 'FAIL',
+  metrics,
+  errors,
+};
 console.log(JSON.stringify(proof));
 await browser.close();
 if (proof.verdict !== 'PASS') process.exit(1);
