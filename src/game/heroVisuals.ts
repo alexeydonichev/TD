@@ -210,6 +210,45 @@ export function createStormShield(scene: Phaser.Scene, center: Point, reduceMoti
   return view;
 }
 
+export function createHeroOverchargeAura(scene: Phaser.Scene, center: Point, reduceMotion: boolean): Phaser.GameObjects.Container {
+  const view = scene.add.container(center.x, center.y).setDepth(17).setName('fx-hero-overcharge');
+  const corona = scene.add.graphics()
+    .fillStyle(0x5ee8ff, 0.08).fillCircle(0, -19, 50)
+    .lineStyle(7, 0x575de0, 0.13).strokeCircle(0, -19, 47)
+    .lineStyle(2.5, 0xbefaff, 0.76).strokeCircle(0, -19, 43)
+    .lineStyle(1.5, 0xffdf72, 0.78).strokeCircle(0, -19, 34);
+  const sparks = scene.add.graphics();
+  for (let spark = 0; spark < 10; spark += 1) {
+    const angle = spark / 10 * Math.PI * 2;
+    const radius = spark % 2 ? 43 : 52;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius - 19;
+    sparks.fillStyle(spark % 2 ? 0x8ff5ff : 0xffe481, 0.9).fillTriangle(
+      x + Math.cos(angle) * 6, y + Math.sin(angle) * 6,
+      x + Math.cos(angle + 2.25) * 4, y + Math.sin(angle + 2.25) * 4,
+      x + Math.cos(angle - 2.25) * 4, y + Math.sin(angle - 2.25) * 4,
+    );
+  }
+  const arcs = scene.add.graphics();
+  for (let arc = 0; arc < 5; arc += 1) {
+    const angle = arc / 5 * Math.PI * 2;
+    arcs.lineStyle(2, 0xedfdff, 0.82).beginPath()
+      .moveTo(Math.cos(angle) * 24, Math.sin(angle) * 24 - 19)
+      .lineTo(Math.cos(angle + 0.22) * 38, Math.sin(angle + 0.22) * 38 - 19)
+      .lineTo(Math.cos(angle + 0.4) * 28, Math.sin(angle + 0.4) * 28 - 19).strokePath();
+  }
+  view.add([corona, sparks, arcs]);
+  if (!reduceMotion) {
+    scene.tweens.add({ targets: sparks, angle: 360, duration: 2400, repeat: -1, ease: 'Linear' });
+    scene.tweens.add({ targets: arcs, angle: -360, duration: 1500, repeat: -1, ease: 'Linear' });
+    scene.tweens.add({ targets: corona, scale: 1.12, alpha: 0.62, duration: 380, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+  }
+  stopLoopingTweensOnDestroy(scene, view, [corona, sparks, arcs]);
+  createLightningBolt(scene, { x: center.x + 18, y: Math.max(8, center.y - 230) }, { x: center.x, y: center.y - 20 }, reduceMotion, 1.5);
+  createThunderBurst(scene, { x: center.x, y: center.y - 18 }, reduceMotion, 1.45);
+  return view;
+}
+
 export function createStormField(scene: Phaser.Scene, center: Point, reduceMotion: boolean): Phaser.GameObjects.Container {
   const view = scene.add.container(center.x, center.y).setDepth(12).setName('fx-hero-storm-field');
   const ground = scene.add.graphics()

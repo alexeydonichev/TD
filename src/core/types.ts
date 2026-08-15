@@ -1,6 +1,7 @@
 export type Point = { x: number; y: number };
 export type TowerType = 'archer' | 'frost' | 'siege' | 'boost';
 export type EnemyType = 'raider' | 'runner' | 'brute' | 'winged' | 'warden' | 'titan' | 'boss';
+export type EliteType = 'swift' | 'bulwark' | 'regenerator';
 export type TargetMode = 'first' | 'strongest';
 export type Difficulty = 'story' | 'standard' | 'rift';
 export type MapId = 'valley' | 'frozen' | 'bastion';
@@ -90,6 +91,20 @@ export interface EnemyDefinition {
   flying: boolean;
   color: number;
   radius: number;
+}
+
+export interface EliteDefinition {
+  type: EliteType;
+  name: string;
+  shortName: string;
+  description: string;
+  color: number;
+  hpMultiplier: number;
+  speedMultiplier: number;
+  armorBonus: number;
+  rewardMultiplier: number;
+  shieldRatio: number;
+  regeneration: number;
 }
 
 export interface WaveSpawn {

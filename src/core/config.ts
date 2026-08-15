@@ -1,4 +1,4 @@
-import type { DifficultyDefinition, EnemyDefinition, MapDefinition, Point, TowerDefinition, WaveDefinition } from './types';
+import type { DifficultyDefinition, EliteDefinition, EliteType, EnemyDefinition, MapDefinition, Point, TowerDefinition, WaveDefinition } from './types';
 
 export const GAME_WIDTH = 1200;
 export const GAME_HEIGHT = 700;
@@ -181,6 +181,21 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
   boss: { type: 'boss', name: 'Владыка Разлома', maxHp: 8400, armor: 32, speed: 23, reward: 1100, crystalDamage: 10, flying: false, color: 0xff3f9a, radius: 35 },
 };
 
+export const ELITES: Record<EliteType, EliteDefinition> = {
+  swift: {
+    type: 'swift', name: 'Гончая Разлома', shortName: 'СТРЕМИТЕЛЬНЫЙ', description: '+22% скорости · +30% здоровья', color: 0xff5bd7,
+    hpMultiplier: 1.3, speedMultiplier: 1.22, armorBonus: 0, rewardMultiplier: 1.45, shieldRatio: 0, regeneration: 0,
+  },
+  bulwark: {
+    type: 'bulwark', name: 'Щитоносец Бездны', shortName: 'БАСТИОН', description: 'щит 28% · +50% здоровья · +16 брони', color: 0x63e8ff,
+    hpMultiplier: 1.5, speedMultiplier: 0.92, armorBonus: 16, rewardMultiplier: 1.7, shieldRatio: 0.28, regeneration: 0,
+  },
+  regenerator: {
+    type: 'regenerator', name: 'Живой Осколок', shortName: 'РЕГЕНЕРАТОР', description: 'восстанавливает 1,2% здоровья/с', color: 0x71f5a1,
+    hpMultiplier: 1.4, speedMultiplier: 1, armorBonus: 4, rewardMultiplier: 1.65, shieldRatio: 0, regeneration: 0.012,
+  },
+};
+
 export const WAVES: WaveDefinition[] = [
   { title: 'Разведчики Разлома', intel: 'Налётчики · наземные', reward: 35, spawns: [{ type: 'raider', count: 8, gapMs: 730 }] },
   { title: 'Первый натиск', intel: 'Плотная группа налётчиков', reward: 42, spawns: [{ type: 'raider', count: 14, gapMs: 560 }] },
@@ -222,3 +237,10 @@ export const HERO = {
     r: { name: 'Сердце бури', mana: 100, cooldown: 30, damage: 48, duration: 6, requiredLevel: 3 },
   },
 };
+
+export const HERO_OVERCHARGE = {
+  durationMs: 8_000,
+  attackSpeedMultiplier: 1.35,
+  damageMultiplier: 1.22,
+  manaRegenMultiplier: 1.35,
+} as const;

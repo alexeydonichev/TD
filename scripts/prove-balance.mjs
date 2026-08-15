@@ -192,6 +192,10 @@ function gold() {
   return page.locator('#gold').textContent().then((value) => Number(value ?? 0));
 }
 
+function gameEnded() {
+  return page.locator('#end-screen:not(.hidden)').isVisible();
+}
+
 function combatPosition(wave) {
   if (wave <= 7) return { hero: [430, 285], spell: [430, 145] };
   if (wave <= 14) return { hero: [665, 430], spell: [650, 520] };
@@ -206,6 +210,7 @@ async function worldClick(x, y, options = {}) {
 }
 
 async function build(type, x, y) {
+  if (await gameEnded()) return true;
   if (await gold() < towerCosts[type]) return false;
   await page.locator(`[data-tower="${type}"]`).click();
   await worldClick(x, y);
@@ -217,7 +222,9 @@ async function build(type, x, y) {
 }
 
 async function upgrade(x, y) {
+  if (await gameEnded()) return true;
   await worldClick(x, y);
+  if (await gameEnded()) return true;
   const button = page.locator('#upgrade');
   if (!(await button.isVisible())) return false;
   if (!(await button.isEnabled())) return true;
@@ -232,7 +239,9 @@ async function upgrade(x, y) {
 }
 
 async function targetStrongest(x, y) {
+  if (await gameEnded()) return true;
   await worldClick(x, y);
+  if (await gameEnded()) return true;
   const button = page.locator('#target-mode');
   if (!(await button.isVisible())) return false;
   if (!(await button.isEnabled())) return true;
@@ -262,7 +271,7 @@ let nextSpellAt = Date.now();
 let bossStormCasts = 0;
 const deadline = Date.now() + 7 * 60_000;
 while (Date.now() < deadline) {
-  if (await page.locator('#end-screen:not(.hidden)').isVisible()) break;
+  if (await gameEnded()) break;
   const wave = Number(await page.locator('#wave').textContent());
   if (wave !== lastWave) {
     lastWave = wave;
@@ -272,6 +281,7 @@ while (Date.now() < deadline) {
     await worldClick(hero[0], hero[1], { button: 'right' });
   }
   for (let index = 0; index < pending.length;) {
+    if (await gameEnded()) break;
     const action = pending[index];
     if (action.after > wave) { index += 1; continue; }
     const done = action.kind === 'build'
@@ -282,10 +292,12 @@ while (Date.now() < deadline) {
     if (done) pending.splice(index, 1);
     else index += 1;
   }
+  if (await gameEnded()) break;
   const start = page.locator('#start-wave');
   if (await start.isEnabled()) {
     await start.evaluate((button) => { if (!button.disabled) button.click(); });
   }
+  if (await gameEnded()) break;
   if (Date.now() >= nextSpellAt) {
     const { spell } = combatPosition(wave);
     const bossWave = wave === 7 || wave === 14 || wave === 20;

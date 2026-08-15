@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, distanceToPath, earlyStartBonus, isWaveComplete, loseLives,
-  matchResult, placementFailure, pointToLineDistance, roundedPath, scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
+  absorbShield, applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, distanceToPath, earlyStartBonus,
+  eliteAffixForSpawn, eliteCadence, expectedEliteCount, isWaveComplete, loseLives, matchResult, placementFailure, pointToLineDistance, roundedPath,
+  scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
-import { DIFFICULTIES, ENEMIES, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
+import { DIFFICULTIES, ELITES, ENEMIES, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -44,6 +45,12 @@ describe('боевые формулы', () => {
     expect(damageOutcome(50, 100, 0)).toEqual({ dealt: 50, hp: 0, killed: true });
     expect(damageOutcome(100, 100, 0, 0.3)).toEqual({ dealt: 30, hp: 70, killed: false });
     expect(damageOutcome(0, 100, 0)).toEqual({ dealt: 0, hp: 0, killed: false });
+  });
+
+  it('сначала расходует элитный щит и передаёт остаток в здоровье', () => {
+    expect(absorbShield(100, 35)).toEqual({ absorbed: 35, remainingDamage: 65, shield: 0 });
+    expect(absorbShield(20, 35)).toEqual({ absorbed: 20, remainingDamage: 0, shield: 15 });
+    expect(absorbShield(-5, -10)).toEqual({ absorbed: 0, remainingDamage: 0, shield: 0 });
   });
 
   it('сохраняет суммарный урон залпа при одинаковой броне каждого снаряда', () => {
@@ -160,7 +167,40 @@ describe('состояние матча', () => {
   });
 });
 
+describe('элитные мутации', () => {
+  it('повышает частоту элиты вместе со сложностью и только после третьей волны', () => {
+    expect(eliteCadence('story')).toBe(12);
+    expect(eliteCadence('standard')).toBe(9);
+    expect(eliteCadence('rift')).toBe(7);
+    expect(expectedEliteCount(3, 40, 'rift')).toBe(0);
+    expect(expectedEliteCount(14, 40, 'rift')).toBe(5);
+  });
+
+  it('не превращает боссов в элиту и постепенно открывает три свойства', () => {
+    expect(eliteAffixForSpawn(4, 7, 'rift', 'boss')).toBeNull();
+    expect(eliteAffixForSpawn(4, 7, 'rift', 'raider')).toBe('swift');
+    const lateAffixes = new Set([7, 14, 21, 28, 35, 42].map((index) => eliteAffixForSpawn(14, index, 'rift', 'raider')));
+    expect(lateAffixes).toEqual(new Set(['swift', 'bulwark', 'regenerator']));
+  });
+
+  it('делает элиту опаснее, но всегда повышает награду', () => {
+    Object.values(ELITES).forEach((elite) => {
+      expect(elite.hpMultiplier).toBeGreaterThan(1);
+      expect(elite.rewardMultiplier).toBeGreaterThan(1);
+    });
+    expect(ELITES.bulwark.shieldRatio).toBeGreaterThan(0);
+    expect(ELITES.regenerator.regeneration).toBeGreaterThan(0);
+  });
+});
+
 describe('способности героя', () => {
+  it('делает заработанную перегрузку коротким, но заметным окном силы', () => {
+    expect(HERO_OVERCHARGE.durationMs).toBe(8_000);
+    expect(HERO_OVERCHARGE.attackSpeedMultiplier).toBeGreaterThanOrEqual(1.35);
+    expect(HERO_OVERCHARGE.damageMultiplier).toBeGreaterThanOrEqual(1.2);
+    expect(HERO_OVERCHARGE.manaRegenMultiplier).toBeGreaterThanOrEqual(1.3);
+  });
+
   it('направляет рывок по приоритету WASD, фокус, курсор', () => {
     const origin = { x: 100, y: 100 };
     expect(dashDestination(origin, { x: -1, y: 0 }, { x: 500, y: 500 }, { x: 400, y: 100 }, 270)).toEqual({ x: -170, y: 100 });

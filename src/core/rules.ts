@@ -1,9 +1,26 @@
-import type { DifficultyDefinition, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, WaveSpawn } from './types';
+import type { Difficulty, DifficultyDefinition, EliteType, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, WaveSpawn } from './types';
 
 export type PlacementFailure = 'outside' | 'path' | 'crystal' | 'forbidden' | 'occupied' | 'gold';
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+export function eliteCadence(difficulty: Difficulty): number {
+  return difficulty === 'rift' ? 7 : difficulty === 'standard' ? 9 : 12;
+}
+
+export function eliteAffixForSpawn(wave: number, spawnIndex: number, difficulty: Difficulty, enemyType: EnemyType): EliteType | null {
+  if (wave < 4 || spawnIndex < 1 || enemyType === 'warden' || enemyType === 'titan' || enemyType === 'boss') return null;
+  const cadence = eliteCadence(difficulty);
+  if (spawnIndex % cadence !== 0) return null;
+  const unlocked: EliteType[] = wave < 8 ? ['swift'] : wave < 13 ? ['swift', 'bulwark'] : ['swift', 'bulwark', 'regenerator'];
+  return unlocked[(wave + Math.floor(spawnIndex / cadence)) % unlocked.length];
+}
+
+export function expectedEliteCount(wave: number, enemyCount: number, difficulty: Difficulty): number {
+  if (wave < 4) return 0;
+  return Math.floor(Math.max(0, enemyCount) / eliteCadence(difficulty));
 }
 
 export function snapToGrid(point: Point, size: number, minX = 0, minY = 0, maxX = Infinity, maxY = Infinity): Point {
@@ -49,6 +66,13 @@ export function damageOutcome(hp: number, rawDamage: number, armor: number, dama
   const dealt = Math.min(currentHp, applyArmor(rawDamage, armor) * Math.max(0, damageMultiplier));
   const remainingHp = Math.max(0, currentHp - dealt);
   return { dealt, hp: remainingHp, killed: currentHp > 0 && remainingHp <= 0 };
+}
+
+export function absorbShield(damage: number, shield: number): { absorbed: number; remainingDamage: number; shield: number } {
+  const safeDamage = Math.max(0, damage);
+  const safeShield = Math.max(0, shield);
+  const absorbed = Math.min(safeDamage, safeShield);
+  return { absorbed, remainingDamage: safeDamage - absorbed, shield: safeShield - absorbed };
 }
 
 export function applySlow(baseSpeed: number, slow: number): number {

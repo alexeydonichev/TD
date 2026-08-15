@@ -238,16 +238,18 @@ test('герой держит фокус, преследует цель и на�
   await page.keyboard.up('KeyA');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x)).toBeLessThan(dashStart - 150);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().w ?? 0)).toBe(1);
-
-  const moveStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
-  await page.mouse.click(box.x + box.width * (1050 / 1200), box.y + box.height * (450 / 700), { button: 'right' });
-  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.focusTarget)).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x), { timeout: 3_000 }).toBeGreaterThan(moveStart + 40);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().attack ?? 0), { timeout: 8_000 }).toBeGreaterThan(0);
 
   await page.keyboard.press('KeyX');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.stance)).toBe('guard');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.command)).toBe('hold');
   await expect(page.locator('#hero-stance')).toContainText('ОХРАНА');
+
+  const moveStart = await page.evaluate(() => window.__TD_TEST__!.state().hero.x);
+  await page.keyboard.down('KeyD');
+  await page.waitForTimeout(250);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x)).toBeGreaterThan(moveStart + 40);
+  await page.keyboard.up('KeyD');
 
   await page.keyboard.press('KeyQ');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().q ?? 0)).toBe(1);
@@ -269,8 +271,39 @@ test('герой держит фокус, преследует цель и на�
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.aimAbility)).toBeNull();
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.abilities.r.cooldown ?? 0)).toBeGreaterThan(0);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().r ?? 0)).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().attack ?? 0), { timeout: 8_000 }).toBeGreaterThan(0);
   await page.screenshot({ path: 'test-results/hero-tactics.png', fullPage: true });
+});
+
+test('элитные мутации читаются в бою, а герой входит в грозовую перегрузку', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => consoleErrors.push(error.message));
+
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#zoom-out').click();
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 2)).toBeLessThanOrEqual(1.01);
+
+  for (const elite of ['swift', 'bulwark', 'regenerator'] as const) {
+    await page.evaluate((kind) => window.__TD_TEST__?.spawnElite(kind), elite);
+  }
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().eliteEnemies ?? 0)).toBe(3);
+  const elites = await page.evaluate(() => window.__TD_TEST__?.enemies().filter((enemy) => enemy.elite));
+  expect(elites?.map((enemy) => enemy.elite).sort()).toEqual(['bulwark', 'regenerator', 'swift']);
+  expect(elites?.find((enemy) => enemy.elite === 'bulwark')?.shield).toBeGreaterThan(0);
+
+  await page.evaluate(() => window.__TD_TEST__?.chargeHero());
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.overcharge ?? 0)).toBeGreaterThan(7);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().overcharge ?? 0)).toBe(1);
+  await expect(page.locator('.hero-panel')).toHaveClass(/overcharged/);
+  await expect(page.locator('#storm-orb')).toHaveClass(/overcharged/);
+  await expect(page.locator('#hero-status')).toContainText('перегрузка');
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: 'test-results/elite-overcharge.png', fullPage: true });
+  expect(consoleErrors).toEqual([]);
 });
 
 test('тактический брифинг показывает состав, награду и статус волны', async ({ page }) => {

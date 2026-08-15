@@ -1,6 +1,6 @@
 import './style.css';
-import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
-import { earlyStartBonus, waveClearReward, waveRoster } from './core/rules';
+import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
+import { earlyStartBonus, expectedEliteCount, waveClearReward, waveRoster } from './core/rules';
 import type { Difficulty, MapId, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
 import { emit, on } from './game/bus';
@@ -41,6 +41,7 @@ app.innerHTML = `
       <div id="wave-details" class="wave-card-details">
         <p id="wave-intel">Налётчики · наземные</p>
         <div id="wave-roster" class="wave-roster" role="list" aria-label="Состав следующей волны"></div>
+        <div id="elite-warning" class="elite-warning hidden"><span>✦ ЭЛИТНЫЕ МУТАЦИИ</span><b id="elite-count"></b></div>
         <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
       </div>
       <div class="wave-economy"><span id="wave-size"></span><span id="wave-reward"></span></div>
@@ -76,7 +77,7 @@ app.innerHTML = `
     </section>
 
     <section class="hero-panel glass" aria-label="Страж Грозы">
-      <div class="hero-portrait">⚡<span id="hero-level">1</span></div>
+      <div class="hero-portrait">⚡<span id="hero-level">1</span><div id="storm-orb" class="storm-orb" title="Заряд бури"><b id="storm-value">0</b></div></div>
       <div class="hero-vitals">
         <div class="hero-title"><strong>Страж Грозы</strong><small id="hero-status">готов</small></div>
         ${bar('hp', 'ЗДОРОВЬЕ')}
@@ -149,6 +150,8 @@ app.innerHTML = `
         <label><input id="screen-shake" type="checkbox"> Встряска камеры</label>
         <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · X — остановиться и держать позицию · Shift — рывок по WASD, к фокусу или курсору · Q предпочитает фокус · E — защита.</p>
         <p><b>Прицеливание:</b> R включает предпросмотр «Сердца бури» · ЛКМ по карте — применить · ПКМ, Esc или повторное R — отменить без траты маны.</p>
+        <p><b>Грозовая перегрузка:</b> атаки и способности наполняют индикатор возле портрета. При 100% герой на ${HERO_OVERCHARGE.durationMs / 1000} секунд получает +${Math.round((HERO_OVERCHARGE.attackSpeedMultiplier - 1) * 100)}% скорости атак, +${Math.round((HERO_OVERCHARGE.damageMultiplier - 1) * 100)}% урона и +${Math.round((HERO_OVERCHARGE.manaRegenMultiplier - 1) * 100)}% восстановления маны.</p>
+        <p><b>Элитные враги:</b> розовые Стремительные ускорены; голубые Бастионы защищены отдельным щитом; зелёные Регенераторы восстанавливают здоровье. За каждого полагается повышенная награда.</p>
         <p><b>Карта:</b> 1–4 — башни · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя · пробел — пауза.</p>
         <button id="close-settings" class="primary">Готово</button>
       </section>
@@ -528,6 +531,11 @@ function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Dif
   lastBriefedWave = briefingKey;
   const roster = waveRoster(wave.spawns);
   const total = roster.reduce((sum, entry) => sum + entry.count, 0);
+  const eliteCount = expectedEliteCount(waveNumber, total, difficulty);
+  const eliteWarning = get('elite-warning');
+  eliteWarning.classList.toggle('hidden', eliteCount === 0);
+  get('elite-count').textContent = eliteCount > 0 ? `≈ ${eliteCount}` : '';
+  eliteWarning.title = 'Стремительные ускорены, Бастионы защищены щитом, Регенераторы восстанавливают здоровье.';
   const rosterElement = get('wave-roster');
   rosterElement.innerHTML = roster.map(({ type, count }) => {
     const enemy = ENEMIES[type];
@@ -551,14 +559,14 @@ function enemyCountLabel(count: number): string {
 
 function strategyHint(wave: number): string {
   if (wave <= 2) return 'Стрелковые башни — надёжный первый рубеж.';
-  if (wave <= 4) return 'Лёд контролирует быстрые группы, стрелки добивают лидера.';
+  if (wave <= 4) return 'Появляется Стремительная элита: лёд должен перехватить её до поворота.';
   if (wave <= 6) return 'Добавьте осадный урон и подготовьте ману к первому боссу.';
   if (wave === 7) return 'БОСС I: переждите щит, герой должен перехватить призванную стаю.';
-  if (wave <= 10) return 'Усильте противовоздушную линию и перекройте второй поворот.';
-  if (wave <= 13) return 'Улучшайте башни до III уровня: число целей быстро растёт.';
+  if (wave <= 10) return 'Элитный Бастион несёт отдельный щит: разбивайте его сосредоточенным огнём.';
+  if (wave <= 13) return 'Улучшайте башни до III уровня и держите героя рядом с элитой ради заряда бури.';
   if (wave === 14) return 'БОСС II: броню Титана лучше всего ломают осадные и магические атаки.';
-  if (wave <= 17) return 'Откройте IV уровень ключевых башен: он добавляет особую боевую механику.';
-  if (wave <= 19) return 'Элитные волны: уровни V–VI дороги, но превращают опорную башню в легендарную.';
+  if (wave <= 17) return 'Регенераторов добивайте фокусом: пауза в огне возвращает им здоровье.';
+  if (wave <= 19) return 'Соберите 100% заряда героя: Перегрузка ускоряет атаки и усиливает грозовой урон.';
   return 'БОСС III: его прорыв уничтожит Кристалл. Сохраните Сердце бури для второй фазы.';
 }
 
@@ -609,9 +617,19 @@ function renderTowerPanel(state: HudState): void {
 
 function renderHero(state: HudState): void {
   const hero = state.hero;
+  const overcharged = hero.overcharge > 0;
+  const heroPanel = document.querySelector<HTMLElement>('.hero-panel')!;
+  heroPanel.classList.toggle('overcharged', overcharged);
   get('hero-level').textContent = String(hero.level);
   const commandLabels = { hold: 'позиция', move: 'к точке', focus: 'фокус', pursuit: 'погоня', aim: 'выбор зоны' } as const;
-  get('hero-status').textContent = hero.alive ? commandLabels[hero.command] : `возрождение ${Math.ceil(hero.respawn)}с`;
+  get('hero-status').textContent = hero.alive ? (overcharged ? `перегрузка ${Math.ceil(hero.overcharge)}с` : commandLabels[hero.command]) : `возрождение ${Math.ceil(hero.respawn)}с`;
+  const stormOrb = get<HTMLElement>('storm-orb');
+  const stormRatio = overcharged ? 1 : hero.stormCharge / 100;
+  stormOrb.style.setProperty('--storm-angle', `${stormRatio * 360}deg`);
+  stormOrb.classList.toggle('active', hero.stormCharge > 0 || overcharged);
+  stormOrb.classList.toggle('overcharged', overcharged);
+  stormOrb.title = overcharged ? `Грозовая перегрузка: ещё ${hero.overcharge.toFixed(1)} с` : `Заряд бури: ${Math.round(hero.stormCharge)}%`;
+  get('storm-value').textContent = overcharged ? String(Math.ceil(hero.overcharge)) : String(Math.round(hero.stormCharge));
   const stance = get<HTMLButtonElement>('hero-stance');
   stance.classList.toggle('pursuit', hero.stance === 'pursuit');
   stance.querySelector('b')!.textContent = hero.stance === 'pursuit' ? 'ПОГОНЯ' : 'ОХРАНА';
