@@ -138,6 +138,25 @@ export function animateHeroAttack(scene: Phaser.Scene, sprite: Phaser.GameObject
 
 export function createDashStorm(scene: Phaser.Scene, from: Point, to: Point, reduceMotion: boolean): void {
   createLightningBolt(scene, from, to, reduceMotion, 1.35);
+  [from, to].forEach((point, index) => {
+    const portal = scene.add.graphics().setPosition(point.x, point.y).setDepth(31).setName(index ? 'fx-dash-arrival' : 'fx-dash-departure');
+    portal.fillStyle(index ? 0x5eeaff : 0x5549d7, 0.16).fillCircle(0, 0, 31)
+      .lineStyle(7, 0x4f56dd, 0.2).strokeCircle(0, 0, 28)
+      .lineStyle(2.5, 0xd4fbff, 0.9).strokeCircle(0, 0, 24)
+      .lineStyle(1.5, 0xffdf78, 0.78).strokeCircle(0, 0, 14);
+    for (let rune = 0; rune < 6; rune += 1) {
+      const angle = rune / 6 * Math.PI * 2;
+      portal.fillStyle(rune % 2 ? 0xa8f7ff : 0xffe486, 0.9).fillTriangle(
+        Math.cos(angle) * 34, Math.sin(angle) * 34,
+        Math.cos(angle + 0.16) * 25, Math.sin(angle + 0.16) * 25,
+        Math.cos(angle - 0.16) * 25, Math.sin(angle - 0.16) * 25,
+      );
+    }
+    scene.tweens.add({
+      targets: portal, scale: reduceMotion ? 1.25 : 1.85, angle: reduceMotion ? 0 : index ? 35 : -35,
+      alpha: 0, duration: reduceMotion ? 170 : 430, ease: 'Cubic.out', onComplete: () => portal.destroy(),
+    });
+  });
   if (!reduceMotion) {
     const angle = Phaser.Math.Angle.Between(from.x, from.y, to.x, to.y);
     const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
@@ -249,26 +268,26 @@ export function createHeroOverchargeAura(scene: Phaser.Scene, center: Point, red
   return view;
 }
 
-export function createStormField(scene: Phaser.Scene, center: Point, reduceMotion: boolean): Phaser.GameObjects.Container {
+export function createStormField(scene: Phaser.Scene, center: Point, radius: number, reduceMotion: boolean): Phaser.GameObjects.Container {
   const view = scene.add.container(center.x, center.y).setDepth(12).setName('fx-hero-storm-field');
   const ground = scene.add.graphics()
-    .fillStyle(0x25256e, 0.18).fillCircle(0, 0, 155)
-    .lineStyle(11, 0x4c51d9, 0.13).strokeCircle(0, 0, 151)
-    .lineStyle(3, 0x8beeff, 0.72).strokeCircle(0, 0, 155)
-    .lineStyle(1.5, 0xffdd76, 0.52).strokeCircle(0, 0, 126);
+    .fillStyle(0x25256e, 0.18).fillCircle(0, 0, radius)
+    .lineStyle(11, 0x4c51d9, 0.13).strokeCircle(0, 0, radius - 4)
+    .lineStyle(3, 0x8beeff, 0.72).strokeCircle(0, 0, radius)
+    .lineStyle(1.5, 0xffdd76, 0.52).strokeCircle(0, 0, radius * 0.81);
   const sigil = scene.add.graphics();
   for (let spoke = 0; spoke < 12; spoke += 1) {
     const angle = spoke / 12 * Math.PI * 2;
     sigil.lineStyle(spoke % 3 === 0 ? 3 : 1.4, spoke % 2 ? 0x7eeaff : 0xffdf7c, 0.5)
-      .beginPath().moveTo(Math.cos(angle) * 74, Math.sin(angle) * 74)
-      .lineTo(Math.cos(angle) * 144, Math.sin(angle) * 144).strokePath();
+      .beginPath().moveTo(Math.cos(angle) * radius * 0.48, Math.sin(angle) * radius * 0.48)
+      .lineTo(Math.cos(angle) * (radius - 11), Math.sin(angle) * (radius - 11)).strokePath();
   }
   const clouds = scene.add.graphics();
   for (let cloud = 0; cloud < 10; cloud += 1) {
     const angle = cloud / 10 * Math.PI * 2;
-    const radius = cloud % 2 ? 92 : 119;
+    const cloudRadius = cloud % 2 ? radius * 0.59 : radius * 0.77;
     clouds.fillStyle(cloud % 2 ? 0x4d4f99 : 0x222654, 0.22)
-      .fillEllipse(Math.cos(angle) * radius, Math.sin(angle) * radius, 55, 25);
+      .fillEllipse(Math.cos(angle) * cloudRadius, Math.sin(angle) * cloudRadius, radius * 0.35, radius * 0.16);
   }
   view.add([ground, sigil, clouds]);
   if (!reduceMotion) {
@@ -279,4 +298,25 @@ export function createStormField(scene: Phaser.Scene, center: Point, reduceMotio
   stopLoopingTweensOnDestroy(scene, view, [ground, sigil, clouds]);
   createThunderBurst(scene, center, reduceMotion, 1.7);
   return view;
+}
+
+export function createStormPulse(scene: Phaser.Scene, center: Point, radius: number, reduceMotion: boolean, empowered: boolean): void {
+  const pulse = scene.add.graphics().setPosition(center.x, center.y).setDepth(30).setName('fx-storm-damage-pulse');
+  pulse.fillStyle(empowered ? 0x8567ff : 0x4c7ddd, empowered ? 0.13 : 0.08).fillCircle(0, 0, radius * 0.82)
+    .lineStyle(empowered ? 5 : 3, empowered ? 0xffe58b : 0x99f3ff, empowered ? 0.82 : 0.62).strokeCircle(0, 0, radius * 0.78)
+    .lineStyle(1.5, 0xe9feff, 0.72).strokeCircle(0, 0, radius * 0.58);
+  if (!reduceMotion) {
+    for (let arc = 0; arc < 8; arc += 1) {
+      const angle = arc / 8 * Math.PI * 2;
+      pulse.lineStyle(2, arc % 2 ? 0x86edff : 0xffdf72, 0.72).beginPath()
+        .moveTo(Math.cos(angle) * radius * 0.35, Math.sin(angle) * radius * 0.35)
+        .lineTo(Math.cos(angle + 0.14) * radius * 0.65, Math.sin(angle + 0.14) * radius * 0.65)
+        .lineTo(Math.cos(angle - 0.06) * radius * 0.88, Math.sin(angle - 0.06) * radius * 0.88).strokePath();
+    }
+  }
+  scene.tweens.add({
+    targets: pulse, scale: reduceMotion ? 1.08 : 1.28, alpha: 0,
+    angle: reduceMotion ? 0 : empowered ? 12 : -8,
+    duration: reduceMotion ? 140 : 360, ease: 'Cubic.out', onComplete: () => pulse.destroy(),
+  });
 }

@@ -5,7 +5,7 @@ import {
   scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
-import { DIFFICULTIES, ELITES, ENEMIES, HERO_LEVELS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
+import { DIFFICULTIES, ELITES, ENEMIES, HERO_LEVELS, HERO_MECHANICS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -231,6 +231,15 @@ describe('способности героя', () => {
     expect(tenth.sealDamageMultiplier).toBeLessThan(first.sealDamageMultiplier);
     expect(tenth.stormRadius).toBeGreaterThan(first.stormRadius);
     expect(tenth.cooldownMultiplier).toBeLessThan(first.cooldownMultiplier);
+  });
+
+  it('задаёт читаемые боевые роли и связку Q → R', () => {
+    expect(HERO_MECHANICS.conductiveDurationMs).toBe(5_000);
+    expect(HERO_MECHANICS.conductiveStormMultiplier).toBe(1.25);
+    expect(HERO_MECHANICS.dashPhaseMs).toBe(1_200);
+    expect(HERO_MECHANICS.sealTowerDamageMultiplier).toBe(1.35);
+    expect(HERO_MECHANICS.stormTickMs).toBe(500);
+    expect(6_000 / HERO_MECHANICS.stormTickMs).toBe(12);
   });
 
   it('делает заработанную перегрузку коротким, но заметным окном силы', () => {

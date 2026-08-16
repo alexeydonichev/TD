@@ -1,5 +1,5 @@
 import './style.css';
-import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
+import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_MECHANICS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
 import { earlyStartBonus, expectedEliteCount, heroWaveClearXp, waveClearReward, waveRoster } from './core/rules';
 import type { Difficulty, MapId, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
@@ -91,6 +91,7 @@ app.innerHTML = `
         </div>
         <small id="hero-focus">АВТОЦЕЛЬ</small>
         <small id="hero-perk">ПРОБУЖДЁННОЕ КОПЬЁ</small>
+        <button id="skill-guide" class="skill-guide-toggle" aria-expanded="false" aria-controls="skill-guide-panel">СКИЛЛЫ <b>?</b></button>
       </div>
       <div class="abilities">
         ${abilityButton('q', 'Q', 'ϟ', HERO.abilities.q.name, HERO.abilities.q.mana)}
@@ -99,6 +100,20 @@ app.innerHTML = `
         ${abilityButton('r', 'R', '☄', HERO.abilities.r.name, HERO.abilities.r.mana)}
       </div>
     </section>
+
+    <aside id="skill-guide-panel" class="skill-guide-panel glass hidden" aria-label="Справочник навыков героя">
+      <header>
+        <div><div class="eyebrow">АРСЕНАЛ СТРАЖА · УРОВЕНЬ <span id="skill-guide-level">1</span>/10</div><h2>Навыки героя</h2></div>
+        <button id="close-skill-guide" class="icon-button" aria-label="Закрыть справочник навыков">×</button>
+      </header>
+      <p class="skill-guide-intro">Все значения пересчитываются с уровнем героя, сложностью и Грозовой перегрузкой.</p>
+      <div class="skill-guide-grid">
+        ${skillGuideCard('q', 'Q', 'ϟ')}
+        ${skillGuideCard('w', 'SHIFT', '➤')}
+        ${skillGuideCard('e', 'E', '◇')}
+        ${skillGuideCard('r', 'R', '☄')}
+      </div>
+    </aside>
 
     <section id="boss-bar" class="boss-bar glass hidden">
       <div><strong id="boss-name">ВЛАДЫКА РАЗЛОМА</strong><span id="boss-phase">ФАЗА I</span><span id="boss-shield"></span></div>
@@ -151,10 +166,11 @@ app.innerHTML = `
         <label><input id="large-text" type="checkbox"> Увеличенный текст HUD</label>
         <label><input id="reduce-motion" type="checkbox"> Уменьшить анимации</label>
         <label><input id="screen-shake" type="checkbox"> Встряска камеры</label>
-        <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · X — остановиться и держать позицию · Shift — рывок по WASD, к фокусу или курсору · Q предпочитает фокус · E — защита.</p>
+        <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · X — остановиться и держать позицию · Shift — мгновенный скачок по WASD, к фокусу или курсору · Q предпочитает фокус.</p>
         <p><b>Прицеливание:</b> R включает предпросмотр «Сердца бури» · ЛКМ по карте — применить · ПКМ, Esc или повторное R — отменить без траты маны.</p>
         <p><b>Грозовая перегрузка:</b> атаки и способности наполняют индикатор возле портрета. При 100% герой на ${HERO_OVERCHARGE.durationMs / 1000} секунд получает +${Math.round((HERO_OVERCHARGE.attackSpeedMultiplier - 1) * 100)}% скорости атак, +${Math.round((HERO_OVERCHARGE.damageMultiplier - 1) * 100)}% урона и +${Math.round((HERO_OVERCHARGE.manaRegenMultiplier - 1) * 100)}% восстановления маны.</p>
         <p><b>Опыт героя:</b> герой развивается с 1-го до 10-го уровня заново на каждой карте. Завершение волн гарантированно ведёт примерно к 8-му уровню; 9–10-й открываются за активные попадания по врагам, элите и боссам. Каждый уровень усиливает здоровье, ману, копьё и способности.</p>
+        <p><b>Связки навыков:</b> Q оставляет на врагах Проводимость на ${HERO_MECHANICS.conductiveDurationMs / 1000} секунд, после чего R наносит им +${Math.round((HERO_MECHANICS.conductiveStormMultiplier - 1) * 100)}% урона. Shift даёт ${HERO_MECHANICS.dashPhaseMs / 1000} секунды неуязвимости после скачка. E не только защищает героя, но и усиливает урон башен в ауре на ${Math.round((HERO_MECHANICS.sealTowerDamageMultiplier - 1) * 100)}%.</p>
         <p><b>Элитные враги:</b> розовые Стремительные ускорены; голубые Бастионы защищены отдельным щитом; зелёные Регенераторы восстанавливают здоровье. За каждого полагается повышенная награда.</p>
         <p><b>Карта:</b> 1–4 — башни · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя · пробел — пауза.</p>
         <button id="close-settings" class="primary">Готово</button>
@@ -186,7 +202,14 @@ function buildButton(type: TowerType, key: string, icon: string): string {
 }
 
 function abilityButton(key: string, hotkey: string, icon: string, name: string, mana: number): string {
-  return `<button class="ability" data-ability="${key}" title="${name}" aria-label="${name}, мана ${mana}"><kbd>${hotkey}</kbd><i aria-hidden="true">${icon}</i><small>${mana}</small><span class="cooldown"></span></button>`;
+  return `<button class="ability" data-ability="${key}" title="${name}" aria-label="${name}, мана ${mana}" aria-describedby="skill-guide-${key}"><kbd>${hotkey}</kbd><i aria-hidden="true">${icon}</i><small>${mana}</small><span class="cooldown"></span></button>`;
+}
+
+function skillGuideCard(key: string, hotkey: string, icon: string): string {
+  return `<article id="skill-guide-${key}" class="skill-card skill-${key}" data-skill-card="${key}">
+    <header><span class="skill-icon"><kbd>${hotkey}</kbd><i aria-hidden="true">${icon}</i></span><div><small data-skill-role></small><h3 data-skill-name></h3></div></header>
+    <p data-skill-description></p><ul data-skill-stats></ul><footer data-skill-combo></footer>
+  </article>`;
 }
 
 function bar(id: string, label: string): string {
@@ -425,15 +448,30 @@ for (const [id, key, storage] of [
 
 get('settings').addEventListener('click', () => get('settings-dialog').classList.remove('hidden'));
 get('close-settings').addEventListener('click', () => get('settings-dialog').classList.add('hidden'));
+function setSkillGuideOpen(open: boolean): void {
+  get('skill-guide-panel').classList.toggle('hidden', !open);
+  get<HTMLButtonElement>('skill-guide').setAttribute('aria-expanded', String(open));
+  get('skill-guide').classList.toggle('active', open);
+}
+get('skill-guide').addEventListener('click', () => setSkillGuideOpen(get('skill-guide-panel').classList.contains('hidden')));
+get('close-skill-guide').addEventListener('click', () => setSkillGuideOpen(false));
+document.querySelectorAll<HTMLButtonElement>('[data-ability]').forEach((button) => {
+  const highlight = () => {
+    document.querySelectorAll('[data-skill-card]').forEach((card) => card.classList.toggle('active', card.getAttribute('data-skill-card') === button.dataset.ability));
+  };
+  button.addEventListener('pointerenter', highlight);
+  button.addEventListener('focus', highlight);
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !get('settings-dialog').classList.contains('hidden')) get('settings-dialog').classList.add('hidden');
+  if (event.key === 'Escape' && !get('skill-guide-panel').classList.contains('hidden')) setSkillGuideOpen(false);
 });
 
 const tutorialSteps = [
   ['Постройте первую башню', 'Нажмите 1–4 или выберите башню внизу, затем укажите свободное место рядом с маршрутом.', '.build-panel'],
   ['Запустите волну', 'Изучите типы противников и нажмите «Начать досрочно». Остаток времени превратится в золото с учётом выбранной сложности.', '.wave-card'],
   ['Возьмите цель под контроль', 'ПКМ по земле отправляет героя в точку, ПКМ по врагу ставит фокус. C переключает «Охрану/Погоню», X немедленно останавливает героя.', '.hero-panel'],
-  ['Примените умение', 'Q начинает цепь с фокус-цели. Shift идёт по WASD, затем к фокусу и курсору. R показывает зону бури до подтверждения ЛКМ.', '.abilities'],
+  ['Примените умение', 'Откройте «Скиллы» для точных цифр. Q помечает врагов Проводимостью, Shift телепортирует и ненадолго защищает, а R сильнее бьёт помеченные цели.', '.abilities'],
   ['Улучшите защиту', 'Выберите построенную башню и нажмите U, чтобы повысить её уровень. Режим цели помогает против разных волн.', '#tower-panel'],
 ] as const;
 let tutorialStep = -1;
@@ -658,6 +696,8 @@ function renderHero(state: HudState): void {
   setBar('mana', hero.mana / hero.maxMana, `${Math.floor(hero.mana)} / ${hero.maxMana}`);
   const xpRatio = hero.level >= 10 ? 1 : (hero.xp - hero.xpLevelStart) / Math.max(1, hero.xpNext - hero.xpLevelStart);
   setBar('xp', xpRatio, hero.level >= 10 ? 'MAX · УР. 10' : `${hero.xp} / ${hero.xpNext}`);
+  get('skill-guide-level').textContent = String(hero.level);
+  const skillRoles: Record<string, string> = { q: 'ЦЕПНАЯ АТАКА · МЕТКА', w: 'МОБИЛЬНОСТЬ · ЗАЩИТА', e: 'АУРА · УСИЛЕНИЕ', r: 'ЗОНА · УЛЬТИМЕЙТ' };
   Object.entries(hero.abilities).forEach(([key, ability]) => {
     const button = document.querySelector<HTMLButtonElement>(`[data-ability="${key}"]`)!;
     const cooldown = button.querySelector<HTMLElement>('.cooldown')!;
@@ -665,9 +705,16 @@ function renderHero(state: HudState): void {
     button.classList.toggle('cooling', ability.cooldown > 0);
     button.classList.toggle('aiming', hero.aimAbility === key);
     button.disabled = ability.locked || ability.cooldown > 0 || hero.mana < ability.mana || !hero.alive;
-    button.title = `${HERO.abilities[key as keyof typeof HERO.abilities].name} · ${ability.detail}`;
+    button.title = `${ability.name} · ${ability.detail}. Откройте «Скиллы» для полного описания.`;
     button.setAttribute('aria-label', `${HERO.abilities[key as keyof typeof HERO.abilities].name}, ${ability.detail}, мана ${ability.mana}`);
     cooldown.textContent = hero.aimAbility === key ? 'ЦЕЛЬ' : ability.locked ? 'УР. 3' : ability.cooldown > 0 ? ability.cooldown.toFixed(1) : '';
+    const card = document.querySelector<HTMLElement>(`[data-skill-card="${key}"]`)!;
+    card.classList.toggle('locked', ability.locked);
+    card.querySelector<HTMLElement>('[data-skill-role]')!.textContent = ability.locked ? `${skillRoles[key]} · ОТКРОЕТСЯ НА УР. 3` : skillRoles[key];
+    card.querySelector<HTMLElement>('[data-skill-name]')!.textContent = ability.name;
+    card.querySelector<HTMLElement>('[data-skill-description]')!.textContent = ability.description;
+    card.querySelector<HTMLElement>('[data-skill-stats]')!.innerHTML = ability.stats.map((stat) => `<li>${stat}</li>`).join('');
+    card.querySelector<HTMLElement>('[data-skill-combo]')!.textContent = ability.combo;
   });
 }
 

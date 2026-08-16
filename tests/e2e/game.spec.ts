@@ -274,6 +274,7 @@ test('герой держит фокус, преследует цель и на�
   await page.keyboard.press('Shift');
   await page.keyboard.up('KeyA');
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.x)).toBeLessThan(dashStart - 150);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.phase ?? 0)).toBeGreaterThan(0.7);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().w ?? 0)).toBe(1);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().attack ?? 0), { timeout: 8_000 }).toBeGreaterThan(0);
 
@@ -311,6 +312,38 @@ test('герой держит фокус, преследует цель и на�
   await page.screenshot({ path: 'test-results/hero-tactics.png', fullPage: true });
 });
 
+test('справочник подробно объясняет телепорт, защиту и урон ультимейта', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#skill-guide').click();
+  await expect(page.locator('#skill-guide-panel')).toBeVisible();
+  await expect(page.locator('#skill-guide')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('[data-skill-card="q"]')).toContainText('Проводимость 5с');
+  await expect(page.locator('[data-skill-card="q"]')).toContainText('Q → R');
+  await expect(page.locator('[data-skill-card="w"]')).toContainText('Мгновенно переносит героя');
+  await expect(page.locator('[data-skill-card="w"]')).toContainText('Неуязвимость 1.2с');
+  await expect(page.locator('[data-skill-card="e"]')).toContainText('Башни +35% урона');
+  await expect(page.locator('[data-skill-card="r"]')).toContainText('56 магического урона за удар');
+  await expect(page.locator('[data-skill-card="r"]')).toContainText('12 ударов · до 668');
+  await expect(page.locator('[data-ability="r"]')).toHaveAttribute('title', /56 каждые 0.5с · до 668 за цель/);
+  await page.screenshot({ path: 'test-results/hero-skill-guide.png', fullPage: true });
+  await page.locator('#close-skill-guide').click();
+  await expect(page.locator('#skill-guide-panel')).toBeHidden();
+});
+
+test('Q помечает выживших врагов Проводимостью для связки с R', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  for (let index = 0; index < 3; index += 1) await page.evaluate(() => window.__TD_TEST__?.spawnElite('bulwark'));
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies().length ?? 0)).toBeGreaterThanOrEqual(3);
+  await page.keyboard.press('KeyQ');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies().some((enemy) => enemy.conductive) ?? false)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().q ?? 0)).toBe(1);
+  await page.screenshot({ path: 'test-results/hero-conductive-combo.png', fullPage: true });
+});
+
 test('герой развивается до 10 уровня и усиливает каждое умение', async ({ page }) => {
   await page.goto('/?test=1');
   await page.locator('#begin').click();
@@ -331,10 +364,11 @@ test('герой развивается до 10 уровня и усиливае
   expect(levelTen.maxMana).toBe(330);
   expect(levelTen.maxHp).toBeGreaterThan(levelThree.maxHp);
   expect(levelTen.abilities.q.detail).toContain('10 целей');
-  expect(levelTen.abilities.w.detail).toContain('рывок 342');
+  expect(levelTen.abilities.w.detail).toContain('скачок 342');
   expect(levelTen.abilities.e.detail).toContain('9с');
-  expect(levelTen.abilities.r.detail).toContain('радиус 200');
-  await expect(page.locator('[data-ability="r"]')).toHaveAttribute('title', /радиус 200/);
+  expect(levelTen.abilities.r.detail).toContain('до 1486 за цель');
+  expect(levelTen.abilities.r.stats).toContain('Радиус 200');
+  await expect(page.locator('[data-ability="r"]')).toHaveAttribute('title', /83 каждые 0.5с · до 1486 за цель/);
   await expect(page.locator('.hero-panel')).toHaveAttribute('title', /Уровень 10\/10/);
   await page.screenshot({ path: 'test-results/hero-level-10.png', fullPage: true });
 });

@@ -256,11 +256,21 @@ export const HERO = {
   manaRegen: 9,
   abilities: {
     q: { name: 'Цепная молния', mana: 45, cooldown: 7, damage: 88 },
-    w: { name: 'Грозовой рывок', mana: 55, cooldown: 9, damage: 105 },
+    w: { name: 'Грозовой скачок', mana: 55, cooldown: 9, damage: 105 },
     e: { name: 'Печать защиты', mana: 60, cooldown: 14, duration: 6 },
     r: { name: 'Сердце бури', mana: 100, cooldown: 30, damage: 48, duration: 6, requiredLevel: 3 },
   },
 };
+
+export const HERO_MECHANICS = {
+  chainFalloff: 0.08,
+  conductiveDurationMs: 5_000,
+  conductiveStormMultiplier: 1.25,
+  dashPhaseMs: 1_200,
+  sealTowerRadius: 240,
+  sealTowerDamageMultiplier: 1.35,
+  stormTickMs: 500,
+} as const;
 
 export const HERO_OVERCHARGE = {
   durationMs: 8_000,
