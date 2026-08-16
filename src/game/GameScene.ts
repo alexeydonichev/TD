@@ -72,9 +72,10 @@ interface EnemyUnit {
   maxEliteShield: number;
   nextElitePulseAt: number;
   eliteArt: Phaser.GameObjects.Graphics;
-  statusArt: Phaser.GameObjects.Graphics;
+  statusArt: Phaser.GameObjects.Graphics | null;
   conductiveUntil: number;
   heroTagged: boolean;
+  testHoldUntil: number;
 }
 
 interface Projectile {
@@ -928,13 +929,12 @@ export class GameScene extends Phaser.Scene {
     const position = this.pointAtProgress(progress);
     const art = this.add.graphics();
     const eliteArt = this.add.graphics();
-    const statusArt = this.add.graphics();
     const frame = { raider: 0, runner: 1, brute: 2, winged: 3, warden: 4, titan: 5, boss: 6 }[type];
     const spriteScale = { raider: 0.15, runner: 0.145, brute: 0.17, winged: 0.17, warden: 0.205, titan: 0.23, boss: 0.225 }[type];
     const spriteBaseY = this.isBossType(type) ? -39 : type === 'winged' ? -34 : -29;
     const sprite = this.add.image(0, spriteBaseY, 'unit-motion-art', frame).setScale(spriteScale);
     const hpBar = this.add.graphics();
-    const container = this.add.container(position.x, position.y, [art, eliteArt, statusArt, sprite, hpBar]).setDepth(type === 'winged' ? 25 : 16);
+    const container = this.add.container(position.x, position.y, [art, eliteArt, sprite, hpBar]).setDepth(type === 'winged' ? 25 : 16);
     const maxHp = definition.maxHp * waveHpMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveHpGrowth) * ENEMY_HP_SCALE
       * (eliteDefinition?.hpMultiplier ?? 1);
     const maxEliteShield = maxHp * (eliteDefinition?.shieldRatio ?? 0);
@@ -944,7 +944,7 @@ export class GameScene extends Phaser.Scene {
       spriteBaseScale: spriteScale, spriteBaseY, motionSeed: this.nextId * 0.73,
       laneOffset: this.isBossType(type) ? 0 : ((this.nextId % 5) - 2) * (type === 'winged' ? 3.5 : 2.5), hitPulseUntil: 0,
       elite, eliteShield: maxEliteShield, maxEliteShield, nextElitePulseAt: this.simTime + 900, eliteArt,
-      statusArt, conductiveUntil: 0, heroTagged: false,
+      statusArt: null, conductiveUntil: 0, heroTagged: false, testHoldUntil: 0,
     };
     container.setName(elite ? `enemy-elite-${elite}` : `enemy-${type}`);
     this.enemies.push(enemy);
@@ -1002,24 +1002,33 @@ export class GameScene extends Phaser.Scene {
   private markConductive(enemy: EnemyUnit): void {
     enemy.conductiveUntil = Math.max(enemy.conductiveUntil, this.simTime + HERO_MECHANICS.conductiveDurationMs);
     const radius = this.enemyDefinition(enemy.type).radius + 11;
-    enemy.statusArt.clear()
+    const statusArt = enemy.statusArt ?? this.add.graphics();
+    if (!enemy.statusArt) {
+      enemy.statusArt = statusArt;
+      enemy.container.addAt(statusArt, 2);
+    }
+    statusArt.clear()
       .lineStyle(5, 0x3f5ce4, 0.15).strokeCircle(0, -7, radius + 3)
       .lineStyle(2, 0xa9f7ff, 0.86).strokeCircle(0, -7, radius)
       .lineStyle(1, 0xffe387, 0.72).strokeCircle(0, -7, radius - 5);
     for (let arc = 0; arc < 4; arc += 1) {
       const angle = arc / 4 * Math.PI * 2;
-      enemy.statusArt.lineStyle(2, 0xeaffff, 0.9).beginPath()
+      statusArt.lineStyle(2, 0xeaffff, 0.9).beginPath()
         .moveTo(Math.cos(angle) * (radius - 2), -7 + Math.sin(angle) * (radius - 2))
         .lineTo(Math.cos(angle + 0.22) * (radius + 7), -7 + Math.sin(angle + 0.22) * (radius + 7))
         .lineTo(Math.cos(angle + 0.42) * radius, -7 + Math.sin(angle + 0.42) * radius).strokePath();
     }
-    enemy.statusArt.setVisible(true);
+    statusArt.setVisible(true);
   }
 
   private updateEnemyStatus(enemy: EnemyUnit): void {
+    if (!enemy.statusArt) return;
     const conductive = enemy.conductiveUntil > this.simTime;
-    enemy.statusArt.setVisible(conductive);
-    if (!conductive) return;
+    if (!conductive) {
+      enemy.statusArt.destroy();
+      enemy.statusArt = null;
+      return;
+    }
     enemy.statusArt.setRotation(this.reduceMotion ? 0 : this.simTime * 0.0012)
       .setAlpha(this.reduceMotion ? 0.82 : 0.72 + Math.sin(this.simTime * 0.009 + enemy.motionSeed) * 0.2);
   }
@@ -1058,9 +1067,11 @@ export class GameScene extends Phaser.Scene {
       }
       const slow = enemy.slowUntil > this.simTime ? enemy.slow : 0;
       const phaseMultiplier = this.isBossType(enemy.type) && enemy.phase === 2 ? 1.28 : 1;
-      enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE
-        * phaseMultiplier * (eliteDefinition?.speedMultiplier ?? 1), slow)
-        * this.routeProgressScale * delta / 1000;
+      if (enemy.testHoldUntil <= this.simTime) {
+        enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE
+          * phaseMultiplier * (eliteDefinition?.speedMultiplier ?? 1), slow)
+          * this.routeProgressScale * delta / 1000;
+      }
       const point = this.pointAtProgress(enemy.progress);
       const behind = this.pointAtProgress(Math.max(0, enemy.progress - 12));
       const ahead = this.pointAtProgress(Math.min(this.routeTotal, enemy.progress + 12));
@@ -1690,8 +1701,14 @@ export class GameScene extends Phaser.Scene {
     this.countdown = 0;
     this.spawnQueue = [];
     this.currentWave = Math.max(10, this.currentWave);
-    const stagger = (this.spawnedThisWave % 6) * 70;
-    this.spawnEnemy('brute', Math.max(0, this.routeTotal - 260 - stagger), elite);
+    const stagger = (this.spawnedThisWave % 6) * 18;
+    const enemy = this.spawnEnemy('brute', Math.max(0, this.routeTotal - 175 - stagger), elite);
+    // Test-mode enemies normally use 8% HP to keep campaign scenarios fast. Elite fixtures
+    // need to survive long enough for visual/status assertions such as Conductivity.
+    enemy.maxHp *= 12;
+    enemy.hp = enemy.maxHp;
+    enemy.testHoldUntil = this.simTime + 10_000;
+    this.drawEnemyHealth(enemy);
   }
 
   private getPerformanceMetrics() {
