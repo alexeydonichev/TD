@@ -324,14 +324,15 @@ const prefetchedMaps = new Map<MapId, HTMLLinkElement>();
 function prefetchSelectedMap(): void {
   if (prefetchedMaps.has(selectedMap)) return;
   const link = document.createElement('link');
-  link.rel = 'prefetch';
+  link.rel = 'preload';
   link.as = 'image';
   link.href = MAPS[selectedMap].asset;
   document.head.append(link);
   prefetchedMaps.set(selectedMap, link);
 }
 const warmGame = () => {
-  void preloadGameModules().then(prefetchSelectedMap).catch(() => undefined);
+  prefetchSelectedMap();
+  void preloadGameModules().catch(() => undefined);
 };
 const warmModules = () => { void preloadGameModules().catch(() => undefined); };
 const idleWindow = window as Window & { requestIdleCallback?: Window['requestIdleCallback'] };
