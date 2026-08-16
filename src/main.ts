@@ -1,6 +1,6 @@
 import './style.css';
 import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
-import { earlyStartBonus, expectedEliteCount, waveClearReward, waveRoster } from './core/rules';
+import { earlyStartBonus, expectedEliteCount, heroWaveClearXp, waveClearReward, waveRoster } from './core/rules';
 import type { Difficulty, MapId, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
 import { emit, on } from './game/bus';
@@ -44,7 +44,7 @@ app.innerHTML = `
         <div id="elite-warning" class="elite-warning hidden"><span>✦ ЭЛИТНЫЕ МУТАЦИИ</span><b id="elite-count"></b></div>
         <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
       </div>
-      <div class="wave-economy"><span id="wave-size"></span><span id="wave-reward"></span></div>
+      <div class="wave-economy"><span id="wave-size"></span><span id="wave-xp"></span><span id="wave-reward"></span></div>
       <div class="wave-row"><span id="countdown">00:12</span><button id="start-wave" class="primary">Начать досрочно <kbd>+золото</kbd></button></div>
     </aside>
 
@@ -90,6 +90,7 @@ app.innerHTML = `
           <button id="hero-stop" title="Остановиться и держать позицию" aria-label="Остановить героя"><kbd>X</kbd><b>СТОП</b></button>
         </div>
         <small id="hero-focus">АВТОЦЕЛЬ</small>
+        <small id="hero-perk">ПРОБУЖДЁННОЕ КОПЬЁ</small>
       </div>
       <div class="abilities">
         ${abilityButton('q', 'Q', 'ϟ', HERO.abilities.q.name, HERO.abilities.q.mana)}
@@ -109,11 +110,13 @@ app.innerHTML = `
       <div class="eyebrow">ОРИГИНАЛЬНАЯ ФЭНТЕЗИ TOWER DEFENSE</div>
       <h1>Долина <span>Разлома</span></h1>
       <p id="start-map-copy">Защитите Кристалл в двадцати волнах и одолейте трёх владык Разлома.</p>
-      <div class="selection-label">КАМПАНИЯ · 3 КАРТЫ</div>
+      <div class="selection-label">КАМПАНИЯ · 5 КАРТ</div>
       <div class="map-picker" role="radiogroup" aria-label="Карта кампании">
         ${mapButton('valley')}
         ${mapButton('frozen')}
         ${mapButton('bastion')}
+        ${mapButton('stormspire')}
+        ${mapButton('abyss')}
       </div>
       <div class="selection-label difficulty-label">УРОВЕНЬ СЛОЖНОСТИ</div>
       <div class="difficulty-picker" role="radiogroup" aria-label="Сложность">
@@ -151,6 +154,7 @@ app.innerHTML = `
         <p><b>Управление героем:</b> WASD — точное движение · ПКМ по земле — идти · ПКМ по врагу — удерживать фокус · C — «Охрана/Погоня» · X — остановиться и держать позицию · Shift — рывок по WASD, к фокусу или курсору · Q предпочитает фокус · E — защита.</p>
         <p><b>Прицеливание:</b> R включает предпросмотр «Сердца бури» · ЛКМ по карте — применить · ПКМ, Esc или повторное R — отменить без траты маны.</p>
         <p><b>Грозовая перегрузка:</b> атаки и способности наполняют индикатор возле портрета. При 100% герой на ${HERO_OVERCHARGE.durationMs / 1000} секунд получает +${Math.round((HERO_OVERCHARGE.attackSpeedMultiplier - 1) * 100)}% скорости атак, +${Math.round((HERO_OVERCHARGE.damageMultiplier - 1) * 100)}% урона и +${Math.round((HERO_OVERCHARGE.manaRegenMultiplier - 1) * 100)}% восстановления маны.</p>
+        <p><b>Опыт героя:</b> герой развивается с 1-го до 10-го уровня заново на каждой карте. Завершение волн гарантированно ведёт примерно к 8-му уровню; 9–10-й открываются за активные попадания по врагам, элите и боссам. Каждый уровень усиливает здоровье, ману, копьё и способности.</p>
         <p><b>Элитные враги:</b> розовые Стремительные ускорены; голубые Бастионы защищены отдельным щитом; зелёные Регенераторы восстанавливают здоровье. За каждого полагается повышенная награда.</p>
         <p><b>Карта:</b> 1–4 — башни · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя · пробел — пауза.</p>
         <button id="close-settings" class="primary">Готово</button>
@@ -173,7 +177,7 @@ function mapButton(id: MapId): string {
 }
 
 function roman(value: number): string {
-  return ['I', 'II', 'III'][value - 1] ?? String(value);
+  return ['I', 'II', 'III', 'IV', 'V'][value - 1] ?? String(value);
 }
 
 function buildButton(type: TowerType, key: string, icon: string): string {
@@ -556,6 +560,7 @@ function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Dif
   }).join('');
   rosterElement.setAttribute('aria-label', `Состав волны ${waveNumber}: ${roster.map(({ type, count }) => `${ENEMIES[type].name}, ${count}`).join('; ')}`);
   get('wave-size').textContent = `${total} ${enemyCountLabel(total)}`;
+  get('wave-xp').textContent = `Герой +${heroWaveClearXp(waveNumber)} XP`;
   get('wave-reward').textContent = `Зачистка +◈ ${Math.round(waveClearReward(wave.reward, DIFFICULTIES[difficulty]) * mapGoldMultiplier)}`;
 }
 
@@ -569,9 +574,9 @@ function enemyCountLabel(count: number): string {
 }
 
 function strategyHint(wave: number): string {
-  if (wave <= 2) return 'Стрелковые башни — надёжный первый рубеж.';
-  if (wave <= 4) return 'Появляется Стремительная элита: лёд должен перехватить её до поворота.';
-  if (wave <= 6) return 'Добавьте осадный урон и подготовьте ману к первому боссу.';
+  if (wave <= 2) return 'Стрелковые башни держат рубеж; герой получает дополнительный XP за личные попадания.';
+  if (wave <= 4) return 'Стремительную элиту перехватывайте льдом и героем: она приносит 8 XP участия.';
+  if (wave <= 6) return 'К концу 6-й волны герой гарантированно открывает R — сохраните ману к боссу.';
   if (wave === 7) return 'БОСС I: переждите щит, герой должен перехватить призванную стаю.';
   if (wave <= 10) return 'Элитный Бастион несёт отдельный щит: разбивайте его сосредоточенным огнём.';
   if (wave <= 13) return 'Улучшайте башни до III уровня и держите героя рядом с элитой ради заряда бури.';
@@ -646,9 +651,13 @@ function renderHero(state: HudState): void {
   stance.querySelector('b')!.textContent = hero.stance === 'pursuit' ? 'ПОГОНЯ' : 'ОХРАНА';
   get('hero-focus').textContent = hero.focusTarget ? `ЦЕЛЬ: ${hero.focusTarget.toUpperCase()}` : 'АВТОЦЕЛЬ';
   get('hero-focus').classList.toggle('active', Boolean(hero.focusTarget));
+  get('hero-perk').textContent = hero.perk.toUpperCase();
+  get('hero-perk').title = hero.perk;
+  heroPanel.title = `Уровень ${hero.level}/10 · ${hero.perk}`;
   setBar('hp', hero.hp / hero.maxHp, `${Math.ceil(hero.hp)} / ${hero.maxHp}`);
   setBar('mana', hero.mana / hero.maxMana, `${Math.floor(hero.mana)} / ${hero.maxMana}`);
-  setBar('xp', hero.level >= 3 ? 1 : hero.xp / hero.xpNext, hero.level >= 3 ? 'MAX' : `${hero.xp} / ${hero.xpNext}`);
+  const xpRatio = hero.level >= 10 ? 1 : (hero.xp - hero.xpLevelStart) / Math.max(1, hero.xpNext - hero.xpLevelStart);
+  setBar('xp', xpRatio, hero.level >= 10 ? 'MAX · УР. 10' : `${hero.xp} / ${hero.xpNext}`);
   Object.entries(hero.abilities).forEach(([key, ability]) => {
     const button = document.querySelector<HTMLButtonElement>(`[data-ability="${key}"]`)!;
     const cooldown = button.querySelector<HTMLElement>('.cooldown')!;
@@ -656,6 +665,8 @@ function renderHero(state: HudState): void {
     button.classList.toggle('cooling', ability.cooldown > 0);
     button.classList.toggle('aiming', hero.aimAbility === key);
     button.disabled = ability.locked || ability.cooldown > 0 || hero.mana < ability.mana || !hero.alive;
+    button.title = `${HERO.abilities[key as keyof typeof HERO.abilities].name} · ${ability.detail}`;
+    button.setAttribute('aria-label', `${HERO.abilities[key as keyof typeof HERO.abilities].name}, ${ability.detail}, мана ${ability.mana}`);
     cooldown.textContent = hero.aimAbility === key ? 'ЦЕЛЬ' : ability.locked ? 'УР. 3' : ability.cooldown > 0 ? ability.cooldown.toFixed(1) : '';
   });
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   absorbShield, applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, distanceToPath, earlyStartBonus,
-  eliteAffixForSpawn, eliteCadence, expectedEliteCount, isWaveComplete, loseLives, matchResult, placementFailure, pointToLineDistance, roundedPath,
+  eliteAffixForSpawn, eliteCadence, expectedEliteCount, heroLevelForXp, heroParticipationCap, heroParticipationXp, heroProgression, heroWaveClearXp, isWaveComplete, loseLives, matchResult, placementFailure, pointToLineDistance, roundedPath,
   scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
-import { DIFFICULTIES, ELITES, ENEMIES, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
+import { DIFFICULTIES, ELITES, ENEMIES, HERO_LEVELS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
 import type { PlacementContext } from './types';
 
 const placement = (overrides: Partial<PlacementContext> = {}): PlacementContext => ({
@@ -194,6 +194,45 @@ describe('элитные мутации', () => {
 });
 
 describe('способности героя', () => {
+  it('даёт герою десять уровней с возрастающей ценой', () => {
+    expect(HERO_LEVELS).toHaveLength(10);
+    expect(HERO_LEVELS.map((entry) => entry.level)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(HERO_LEVELS.map((entry) => entry.xp)).toEqual([0, 80, 190, 330, 500, 700, 930, 1190, 1480, 1800]);
+    expect(heroLevelForXp(0)).toBe(1);
+    expect(heroLevelForXp(189)).toBe(2);
+    expect(heroLevelForXp(1800)).toBe(10);
+  });
+
+  it('связывает XP с волнами, боссами и активным участием', () => {
+    const guaranteedCampaignXp = Array.from({ length: 20 }, (_, index) => heroWaveClearXp(index + 1)).reduce((sum, xp) => sum + xp, 0);
+    const maximumParticipationXp = Array.from({ length: 20 }, (_, index) => heroParticipationCap(index + 1)).reduce((sum, xp) => sum + xp, 0);
+    const guaranteedBeforeFirstBoss = Array.from({ length: 6 }, (_, index) => heroWaveClearXp(index + 1)).reduce((sum, xp) => sum + xp, 0);
+    const guaranteedAfterSecondBoss = Array.from({ length: 14 }, (_, index) => heroWaveClearXp(index + 1)).reduce((sum, xp) => sum + xp, 0);
+    expect(guaranteedBeforeFirstBoss).toBe(210);
+    expect(heroLevelForXp(guaranteedBeforeFirstBoss)).toBe(3);
+    expect(guaranteedAfterSecondBoss).toBe(752);
+    expect(heroLevelForXp(guaranteedAfterSecondBoss)).toBe(6);
+    expect(guaranteedCampaignXp).toBe(1260);
+    expect(heroLevelForXp(guaranteedCampaignXp)).toBe(8);
+    expect(heroLevelForXp(guaranteedCampaignXp + maximumParticipationXp)).toBe(10);
+    expect(heroParticipationXp('raider', null)).toBe(2);
+    expect(heroParticipationXp('brute', 'bulwark')).toBe(8);
+    expect(heroParticipationXp('boss', null)).toBe(50);
+  });
+
+  it('усиливает атаку, ресурсы и все четыре навыка к десятому уровню', () => {
+    const first = heroProgression(1);
+    const tenth = heroProgression(10);
+    expect(tenth.maxHp).toBeGreaterThan(first.maxHp);
+    expect(tenth.maxMana).toBeGreaterThan(first.maxMana);
+    expect(tenth.attackDamageMultiplier).toBeGreaterThanOrEqual(1.58);
+    expect(tenth.qChains).toBeGreaterThan(first.qChains);
+    expect(tenth.dashDistance).toBeGreaterThan(first.dashDistance);
+    expect(tenth.sealDamageMultiplier).toBeLessThan(first.sealDamageMultiplier);
+    expect(tenth.stormRadius).toBeGreaterThan(first.stormRadius);
+    expect(tenth.cooldownMultiplier).toBeLessThan(first.cooldownMultiplier);
+  });
+
   it('делает заработанную перегрузку коротким, но заметным окном силы', () => {
     expect(HERO_OVERCHARGE.durationMs).toBe(8_000);
     expect(HERO_OVERCHARGE.attackSpeedMultiplier).toBeGreaterThanOrEqual(1.35);
@@ -291,11 +330,11 @@ describe('режимы сложности', () => {
   });
 });
 
-describe('кампания из трёх карт', () => {
-  it('задаёт три самостоятельных маршрута и фоновых ассета', () => {
-    expect(MAP_ORDER).toEqual(['valley', 'frozen', 'bastion']);
-    expect(new Set(MAP_ORDER.map((id) => MAPS[id].asset)).size).toBe(3);
-    expect(new Set(MAP_ORDER.map((id) => JSON.stringify(MAPS[id].path))).size).toBe(3);
+describe('кампания из пяти карт', () => {
+  it('задаёт пять самостоятельных маршрутов и фоновых ассетов', () => {
+    expect(MAP_ORDER).toEqual(['valley', 'frozen', 'bastion', 'stormspire', 'abyss']);
+    expect(new Set(MAP_ORDER.map((id) => MAPS[id].asset)).size).toBe(5);
+    expect(new Set(MAP_ORDER.map((id) => JSON.stringify(MAPS[id].path))).size).toBe(5);
     MAP_ORDER.forEach((id, index) => {
       expect(MAPS[id].number).toBe(index + 1);
       expect(MAPS[id].path.length).toBeGreaterThanOrEqual(8);
@@ -304,11 +343,14 @@ describe('кампания из трёх карт', () => {
   });
 
   it('повышает давление и сокращает экономику на следующих картах', () => {
-    expect(MAPS.frozen.enemyHp).toBeGreaterThan(MAPS.valley.enemyHp);
-    expect(MAPS.bastion.enemyHp).toBeGreaterThan(MAPS.frozen.enemyHp);
-    expect(MAPS.frozen.enemySpeed).toBeGreaterThan(MAPS.valley.enemySpeed);
-    expect(MAPS.bastion.goldMultiplier).toBeLessThan(MAPS.frozen.goldMultiplier);
-    expect(MAPS.frozen.goldMultiplier).toBeLessThan(MAPS.valley.goldMultiplier);
+    const maps = MAP_ORDER.map((id) => MAPS[id]);
+    for (let index = 1; index < maps.length; index += 1) {
+      expect(maps[index].enemyHp).toBeGreaterThan(maps[index - 1].enemyHp);
+      expect(maps[index].enemyArmor).toBeGreaterThan(maps[index - 1].enemyArmor);
+      expect(maps[index].enemySpeed).toBeGreaterThan(maps[index - 1].enemySpeed);
+      expect(maps[index].goldMultiplier).toBeLessThan(maps[index - 1].goldMultiplier);
+      expect(maps[index].scoreMultiplier).toBeGreaterThan(maps[index - 1].scoreMultiplier);
+    }
   });
 
   it('скругляет повороты внутри дорожного полотна без срезания маршрута', () => {

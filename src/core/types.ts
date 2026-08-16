@@ -4,7 +4,7 @@ export type EnemyType = 'raider' | 'runner' | 'brute' | 'winged' | 'warden' | 't
 export type EliteType = 'swift' | 'bulwark' | 'regenerator';
 export type TargetMode = 'first' | 'strongest';
 export type Difficulty = 'story' | 'standard' | 'rift';
-export type MapId = 'valley' | 'frozen' | 'bastion';
+export type MapId = 'valley' | 'frozen' | 'bastion' | 'stormspire' | 'abyss';
 export type HeroStance = 'guard' | 'pursuit';
 
 export interface MapDefinition {

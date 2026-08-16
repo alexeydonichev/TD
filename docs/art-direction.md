@@ -13,11 +13,13 @@
 - `public/assets/rift-valley-map-v3.png` — мастер ландшафта игровой карты с маршрутом и зонами строительства;
 - `public/assets/frozen-pass-map.png` — мастер второй карты «Ледяной перевал»;
 - `public/assets/ashen-bastion-map.png` — мастер третьей карты «Пепельный бастион»;
+- `public/assets/stormspire-map.webp` — оптимизированный фон четвёртой карты «Грозовой шпиль»;
+- `public/assets/abyss-heart-map.webp` — оптимизированный фон пятой карты «Сердце Бездны»;
 - `public/assets/towers-atlas.png`, сетка 2×2: стрелковая, ледяная, осадная, усиление;
 - `public/assets/units-motion-atlas.png`, сетка 4×2 с кадром 384×512: налётчик, бегун, громила, крылатое порождение, Страж Бездны, Титан Осколков, Владыка Разлома и призрачный огонёк;
 - `public/assets/hero-v2.png` — мастер полнофигурного спрайта Стража Грозы, 768×768 RGBA.
 
-Зелёный chroma-key был удалён локально с мягкой матовой границей и despill. PNG сохранены как lossless-мастера. В production используются визуально проверенные WebP-производные с теми же размерами кадров и alpha: `rift-valley-title.webp`, три фона карт, `towers-atlas.webp`, `units-motion-atlas.webp`, `hero-v2.webp`. Одновременно загружается только выбранный фон: самый тяжёлый игровой набор после клика остаётся меньше 1,1 MB. Фоны кампании весят примерно 428, 364 и 242 KB.
+Зелёный chroma-key был удалён локально с мягкой матовой границей и despill. PNG сохранены как lossless-мастера. В production используются визуально проверенные WebP-производные с теми же размерами кадров и alpha: `rift-valley-title.webp`, пять фонов карт, `towers-atlas.webp`, `units-motion-atlas.webp`, `hero-v2.webp`. Одновременно загружается только выбранный фон: самый тяжёлый игровой набор после клика остаётся меньше 1,1 MB.
 
 ## Происхождение
 
@@ -44,6 +46,14 @@
 Финальный запрос «Ледяного перевала»: «Production background map for a browser fantasy tower-defense game, 16:9, fixed elevated top-down/isometric view. Original snow-covered mountain pass with deep blue ice ravines, frozen waterfalls, ruined stone watchtowers, cyan crystals, dark fir trees, violet Rift corruption at the left edge and a warm golden sanctuary at the right. One broad continuous pale stone-and-ice road: left upper edge → right → down → right → up → right → down → sanctuary; broad readable buildable terrain pockets on both sides. Cold moonlit cyan/navy lighting, polished painterly game art. No branches, player towers, characters, enemies, labels, symbols, HUD, borders, text, logos or watermark».
 
 Финальный запрос «Пепельного бастиона»: «Production background map for a browser fantasy tower-defense game, 16:9, fixed elevated top-down/isometric view. Original obsidian fortress ruins above lava chasms with magma waterfalls, cracked black basalt, ember-lit dead trees, red-gold runes, violet Rift portal at the left edge and a radiant golden citadel at the right. One broad continuous ash-stone road: left lower edge → right → up → right → up → right → down → citadel; broad readable basalt buildable plateaus. Dramatic red-orange magma light, charcoal rock and violet shadows, polished final-battle game art. No branches, player towers, characters, enemies, labels, symbols, HUD, borders, text, logos or watermark».
+
+## Карты кампании IV–V
+
+Обе карты созданы встроенным OpenAI image generation tool без внешних референсов. Исходные результаты сохранены системой генерации как `exec-d3a9e815-c47a-4bac-896a-d6cbaa056d88.png` и `exec-73146502-d129-4a1f-8f95-ffada1d6baa7.png`. Для production они уменьшены до 1200×700 и преобразованы Chromium Canvas в WebP quality 0.78: `public/assets/stormspire-map.webp` и `public/assets/abyss-heart-map.webp`. Как и прежде, браузер загружает только фон выбранной карты.
+
+Финальный запрос «Грозового шпиля»: «Premium top-down fantasy tower-defense background, original storm mountain citadel above the clouds, fixed elevated 3/4 view, 16:9. One broad continuous stone road runs from the left lower-middle edge to the right, turns upward, crosses the middle, turns upward again and reaches a radiant golden crystal sanctuary in the right upper-middle. Dark slate cliffs, storm clouds, cyan lightning, waterfalls disappearing into clouds, ruined observatories and spacious buildable plateaus. Polished hand-painted game art with a clear readable path. No UI, text, labels, grid, towers, units, characters, logos or watermark».
+
+Финальный запрос «Сердца Бездны»: «Premium top-down final fantasy tower-defense background, original volcanic obsidian and amethyst Rift realm, fixed elevated 3/4 view, 16:9. One broad continuous ash-stone path enters from the left upper-middle edge, travels right, descends, doubles back left through the center, descends again, then turns right to a radiant crystal sanctuary near the lower-right edge. Lava fissures, violet energy chasms, black basalt terraces, ancient broken arches and broad readable buildable ground. Polished dramatic hand-painted game art. No UI, text, labels, grid, towers, units, characters, logos or watermark».
 
 ## Страж Грозы v2
 

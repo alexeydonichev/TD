@@ -42,12 +42,14 @@ test('загрузчик сам восстанавливается после к
   await expect(page.locator('#start-screen')).toBeHidden();
 });
 
-test('кампания показывает три карты и загружает только выбранную', async ({ page }) => {
+test('кампания показывает пять карт и загружает только выбранную', async ({ page }) => {
   await page.goto('/?test=1');
-  await expect(page.locator('[data-map]')).toHaveCount(3);
+  await expect(page.locator('[data-map]')).toHaveCount(5);
   await expect(page.locator('[data-map="valley"]')).toContainText('Долина Разлома');
   await expect(page.locator('[data-map="frozen"]')).toContainText('Ледяной перевал');
   await expect(page.locator('[data-map="bastion"]')).toContainText('Пепельный бастион');
+  await expect(page.locator('[data-map="stormspire"]')).toContainText('Грозовой шпиль');
+  await expect(page.locator('[data-map="abyss"]')).toContainText('Сердце Бездны');
   await page.locator('[data-map="frozen"]').click();
   await expect(page.locator('[data-map="frozen"]')).toHaveClass(/active/);
   await page.locator('#begin').click();
@@ -78,6 +80,24 @@ test('кампания показывает три карты и загружа�
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies()[0]?.x ?? 0)).toBeGreaterThan((bastionStart?.x ?? 0) + 20);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().maxGroundRoadDeviation ?? 999)).toBeLessThanOrEqual(6);
   await page.screenshot({ path: 'test-results/ashen-bastion.png', fullPage: true });
+
+  for (const [mapId, asset, brand, screenshot] of [
+    ['stormspire', 'stormspire-map.webp', 'ГРОЗОВОЙ ШПИЛЬ', 'stormspire-map.png'],
+    ['abyss', 'abyss-heart-map.webp', 'СЕРДЦЕ БЕЗДНЫ', 'abyss-heart-map.png'],
+  ] as const) {
+    await page.goto('/?test=1');
+    await page.locator(`[data-map="${mapId}"]`).click();
+    await page.locator('#begin').click();
+    await expect(page.locator('canvas')).toBeVisible({ timeout: 8_000 });
+    await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().mapId)).toBe(mapId);
+    await expect(page.locator('#brand-map-name')).toHaveText(brand);
+    const loaded = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name).filter((url) => /-map\.(png|webp)/.test(url)));
+    expect(loaded.some((url) => url.endsWith(`/assets/${asset}`))).toBe(true);
+    expect(new Set(loaded).size).toBe(1);
+    await page.evaluate(() => window.__TD_TEST__?.spawnStress(1));
+    await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().maxGroundRoadDeviation ?? 999)).toBeLessThanOrEqual(6);
+    await page.screenshot({ path: `test-results/${screenshot}`, fullPage: true });
+  }
 });
 
 test('полный ускоренный матч: башня, способность, улучшение, следующая волна и победа', async ({ page }) => {
@@ -291,6 +311,34 @@ test('герой держит фокус, преследует цель и на�
   await page.screenshot({ path: 'test-results/hero-tactics.png', fullPage: true });
 });
 
+test('герой развивается до 10 уровня и усиливает каждое умение', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.level)).toBe(3);
+  const levelThree = await page.evaluate(() => window.__TD_TEST__!.state().hero);
+
+  await page.evaluate(() => window.__TD_TEST__?.grantHeroXp(240));
+  await expect(page.locator('#hero-level')).toHaveText('5');
+  await expect(page.locator('#hero-perk')).toContainText('РАЗВЕТВЛЁННАЯ МОЛНИЯ');
+  await expect(page.locator('[data-ability="q"]')).toHaveAttribute('title', /7 целей/);
+
+  await page.evaluate(() => window.__TD_TEST__?.grantHeroXp(1300));
+  await expect(page.locator('#hero-level')).toHaveText('10');
+  await expect(page.locator('#xp-value')).toHaveText('MAX · УР. 10');
+  const levelTen = await page.evaluate(() => window.__TD_TEST__!.state().hero);
+  expect(levelTen.maxHp).toBe(618);
+  expect(levelTen.maxMana).toBe(330);
+  expect(levelTen.maxHp).toBeGreaterThan(levelThree.maxHp);
+  expect(levelTen.abilities.q.detail).toContain('10 целей');
+  expect(levelTen.abilities.w.detail).toContain('рывок 342');
+  expect(levelTen.abilities.e.detail).toContain('9с');
+  expect(levelTen.abilities.r.detail).toContain('радиус 200');
+  await expect(page.locator('[data-ability="r"]')).toHaveAttribute('title', /радиус 200/);
+  await expect(page.locator('.hero-panel')).toHaveAttribute('title', /Уровень 10\/10/);
+  await page.screenshot({ path: 'test-results/hero-level-10.png', fullPage: true });
+});
+
 test('элитные мутации читаются в бою, а герой входит в грозовую перегрузку', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
@@ -334,6 +382,7 @@ test('тактический брифинг показывает состав, �
   await expect(page.locator('#wave-roster .enemy-chip')).toContainText('Налётчик');
   await expect(page.locator('#wave-roster .enemy-chip')).toContainText('×8');
   await expect(page.locator('#wave-size')).toHaveText('8 врагов');
+  await expect(page.locator('#wave-xp')).toHaveText('Герой +30 XP');
   await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 35');
   await expect(page.locator('#start-wave')).toContainText(/\+◈ \d+/);
 
@@ -355,6 +404,7 @@ test('тактический брифинг показывает состав, �
   await expect(page.locator('#wave-roster .enemy-chip')).toHaveCount(4);
   await expect(page.locator('#wave-roster')).toContainText('Владыка Разлома×1');
   await expect(page.locator('#wave-size')).toHaveText('45 врагов');
+  await expect(page.locator('#wave-xp')).toHaveText('Герой +198 XP');
   await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 320');
   await page.screenshot({ path: 'test-results/tactical-briefing.png', fullPage: true });
 });

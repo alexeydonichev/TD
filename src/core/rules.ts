@@ -1,4 +1,5 @@
 import type { Difficulty, DifficultyDefinition, EliteType, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, WaveSpawn } from './types';
+import { HERO, HERO_LEVELS } from './config';
 
 export type PlacementFailure = 'outside' | 'path' | 'crystal' | 'forbidden' | 'occupied' | 'gold';
 
@@ -21,6 +22,51 @@ export function eliteAffixForSpawn(wave: number, spawnIndex: number, difficulty:
 export function expectedEliteCount(wave: number, enemyCount: number, difficulty: Difficulty): number {
   if (wave < 4) return 0;
   return Math.floor(Math.max(0, enemyCount) / eliteCadence(difficulty));
+}
+
+export function heroLevelForXp(xp: number): number {
+  const safeXp = Math.max(0, xp);
+  return HERO_LEVELS.reduce((level, definition) => safeXp >= definition.xp ? definition.level : level, 1);
+}
+
+export function heroProgression(level: number) {
+  const safeLevel = Math.max(1, Math.min(HERO_LEVELS.length, Math.floor(level)));
+  const growth = safeLevel - 1;
+  return {
+    level: safeLevel,
+    maxHp: HERO.maxHp + growth * 22,
+    maxMana: HERO.maxMana + growth * 10,
+    attackDamageMultiplier: 1 + growth * 0.065,
+    attackSpeedMultiplier: 1 + growth * 0.018,
+    manaRegenMultiplier: 1 + growth * 0.035,
+    cooldownMultiplier: 1 - growth * 0.015,
+    stormChargeMultiplier: 1 + growth * 0.04,
+    qDamageMultiplier: 1 + growth * 0.055,
+    qChains: 5 + Math.floor(safeLevel / 2),
+    wDamageMultiplier: 1 + growth * 0.07,
+    dashDistance: 270 + growth * 8,
+    sealDuration: HERO.abilities.e.duration + Math.floor(growth / 3),
+    sealDamageMultiplier: Math.max(0.24, 0.4 - growth * 0.018),
+    stormDamageMultiplier: 1 + growth * 0.08,
+    stormRadius: 155 + growth * 5,
+    stormDuration: HERO.abilities.r.duration + Math.floor(growth / 3),
+    perk: HERO_LEVELS[safeLevel - 1].perk,
+  };
+}
+
+export function heroWaveClearXp(wave: number): number {
+  const safeWave = Math.max(1, Math.min(20, Math.floor(wave)));
+  const bossBonus = safeWave === 7 ? 60 : safeWave === 14 ? 90 : safeWave === 20 ? 130 : 0;
+  return 28 + safeWave * 2 + bossBonus;
+}
+
+export function heroParticipationXp(enemyType: EnemyType, elite: EliteType | null): number {
+  if (enemyType === 'warden' || enemyType === 'titan' || enemyType === 'boss') return 50;
+  return elite ? 8 : 2;
+}
+
+export function heroParticipationCap(wave: number): number {
+  return 18 + Math.max(1, Math.min(20, Math.floor(wave))) * 2;
 }
 
 export function snapToGrid(point: Point, size: number, minX = 0, minY = 0, maxX = Infinity, maxY = Infinity): Point {

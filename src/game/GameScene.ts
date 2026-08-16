@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import {
-  BUILD_GRID_PADDING, BUILD_GRID_SIZE, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ELITES, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_OVERCHARGE,
+  BUILD_GRID_PADDING, BUILD_GRID_SIZE, DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ELITES, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_LEVELS, HERO_OVERCHARGE,
   INTERMISSION_SECONDS, MAP_ORDER, MAPS, MAX_TOWER_LEVEL, TOWERS, WAVES,
 } from '../core/config';
 import {
-  absorbShield, applyArmor, applySlow, chainTargets, damageOutcome, dashDestination, distance, distanceToPath, earlyStartBonus, eliteAffixForSpawn, loseLives,
-  placementFailure, pointToLineDistance, roundedPath, scaleEnemy, snapToGrid, selectTarget, sellValue, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
+  absorbShield, applyArmor, applySlow, chainTargets, damageOutcome, dashDestination, distance, distanceToPath, earlyStartBonus, eliteAffixForSpawn, heroLevelForXp,
+  heroParticipationCap, heroParticipationXp, heroProgression, heroWaveClearXp, loseLives, placementFailure, pointToLineDistance, roundedPath, scaleEnemy, snapToGrid,
+  selectTarget, sellValue, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
 import type { Difficulty, EliteType, EnemyType, HeroStance, MapId, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
@@ -71,6 +72,7 @@ interface EnemyUnit {
   maxEliteShield: number;
   nextElitePulseAt: number;
   eliteArt: Phaser.GameObjects.Graphics;
+  heroTagged: boolean;
 }
 
 interface Projectile {
@@ -91,6 +93,8 @@ interface Storm {
   y: number;
   endsAt: number;
   nextTick: number;
+  radius: number;
+  damage: number;
   view: Phaser.GameObjects.Container;
 }
 
@@ -170,7 +174,7 @@ export interface HudState {
     boosted: boolean;
     auraTargets: number;
   };
-  hero: { x: number; y: number; hp: number; maxHp: number; mana: number; maxMana: number; xp: number; xpNext: number; level: number; alive: boolean; respawn: number; stance: HeroStance; focusTarget: string | null; command: HeroCommand; aimAbility: 'r' | null; stormCharge: number; overcharge: number; abilities: Record<string, { cooldown: number; mana: number; locked: boolean }> };
+  hero: { x: number; y: number; hp: number; maxHp: number; mana: number; maxMana: number; xp: number; xpLevelStart: number; xpNext: number; level: number; perk: string; alive: boolean; respawn: number; stance: HeroStance; focusTarget: string | null; command: HeroCommand; aimAbility: 'r' | null; stormCharge: number; overcharge: number; abilities: Record<string, { cooldown: number; mana: number; locked: boolean; detail: string }> };
   boss: null | { name: string; hp: number; maxHp: number; phase: number; shielded: boolean };
   cameraZoom: number;
   result: 'playing' | 'victory' | 'defeat';
@@ -185,6 +189,7 @@ declare global {
       spawnStress: (count: number) => void;
       spawnElite: (elite?: EliteType) => void;
       chargeHero: () => void;
+      grantHeroXp: (amount: number) => void;
       enemies: () => Array<{ id: number; type: EnemyType; name: string; x: number; y: number; elite: EliteType | null; shield: number }>;
       metrics: () => { activeEnemies: number; eliteEnemies: number; gameObjects: number; averageFrameMs: number; fps: number; maxGroundRoadDeviation: number };
       visuals: () => { attack: number; q: number; w: number; e: number; r: number; overcharge: number };
@@ -218,6 +223,7 @@ export class GameScene extends Phaser.Scene {
   private storms: Storm[] = [];
   private spawnQueue: SpawnEntry[] = [];
   private spawnedThisWave = 0;
+  private heroParticipationXpThisWave = 0;
   private buildType: TowerType | null = null;
   private selectedTower: TowerUnit | null = null;
   private placementMessage = '';
@@ -313,6 +319,7 @@ export class GameScene extends Phaser.Scene {
         spawnStress: (count) => this.spawnStress(count),
         spawnElite: (elite = 'bulwark') => this.spawnEliteForTest(elite),
         chargeHero: () => this.addStormCharge(100),
+        grantHeroXp: (amount) => this.awardHeroXp(amount),
         enemies: () => this.enemies.filter((enemy) => enemy.alive).map((enemy) => ({
           id: enemy.id, type: enemy.type, name: this.enemyDefinition(enemy.type).name,
           x: enemy.container.x, y: enemy.container.y, elite: enemy.elite, shield: enemy.eliteShield,
@@ -451,9 +458,12 @@ export class GameScene extends Phaser.Scene {
     const art = this.add.graphics();
     const sprite = this.add.image(0, -40, 'hero-v2').setDisplaySize(88, 88);
     const container = this.add.container(crystal.x - 70, crystal.y + 80, [art, sprite]).setDepth(18);
+    const xp = TEST_MODE ? 260 : 0;
+    const level = heroLevelForXp(xp);
+    const progression = heroProgression(level);
     this.hero = {
-      x: container.x, y: container.y, target: { x: container.x, y: container.y }, hp: HERO.maxHp, mana: HERO.maxMana,
-      xp: TEST_MODE ? 260 : 0, level: TEST_MODE ? 3 : 1, alive: true, respawnAt: 0, nextAttackAt: 0, sealUntil: 0,
+      x: container.x, y: container.y, target: { x: container.x, y: container.y }, hp: progression.maxHp, mana: progression.maxMana,
+      xp, level, alive: true, respawnAt: 0, nextAttackAt: 0, sealUntil: 0,
       stormCharge: 0, overchargeUntil: 0,
       stance: 'guard', focusTargetId: null, moveCommand: false,
       cooldowns: { q: 0, w: 0, e: 0, r: 0 }, container, art, sprite,
@@ -550,8 +560,9 @@ export class GameScene extends Phaser.Scene {
     art.lineStyle(overcharged || this.hero.stance === 'pursuit' ? 3 : 2, color, 0.78).strokeEllipse(0, 3, overcharged ? 64 : 54, overcharged ? 31 : 25);
     art.lineStyle(1, 0xf6d477, 0.42).strokeCircle(0, 1, 33);
     art.fillStyle(0x120f18, 0.86).fillRoundedRect(-27, -91, 54, 6, 2);
-    art.fillStyle(this.hero.hp / HERO.maxHp > 0.35 ? 0x58e0b2 : 0xff6578, 0.98)
-      .fillRoundedRect(-26, -90, 52 * Math.max(0, this.hero.hp / HERO.maxHp), 4, 2);
+    const maxHp = heroProgression(this.hero.level).maxHp;
+    art.fillStyle(this.hero.hp / maxHp > 0.35 ? 0x58e0b2 : 0xff6578, 0.98)
+      .fillRoundedRect(-26, -90, 52 * Math.max(0, this.hero.hp / maxHp), 4, 2);
   }
 
   private drawHeroCommand(focus: EnemyUnit | null): void {
@@ -572,13 +583,14 @@ export class GameScene extends Phaser.Scene {
   private drawAbilityPreview(pointer: Phaser.Input.Pointer): void {
     const preview = this.abilityPreview.clear();
     if (this.aimAbility !== 'r' || !this.hero.alive) return;
+    const radius = heroProgression(this.hero.level).stormRadius;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const center = {
-      x: Phaser.Math.Clamp(world.x, 155, GAME_WIDTH - 155),
-      y: Phaser.Math.Clamp(world.y, 155, GAME_HEIGHT - 155),
+      x: Phaser.Math.Clamp(world.x, radius, GAME_WIDTH - radius),
+      y: Phaser.Math.Clamp(world.y, radius, GAME_HEIGHT - radius),
     };
-    preview.fillStyle(0x5d3fe0, 0.14).fillCircle(center.x, center.y, 155)
-      .lineStyle(3, 0xa9f4ff, 0.82).strokeCircle(center.x, center.y, 155)
+    preview.fillStyle(0x5d3fe0, 0.14).fillCircle(center.x, center.y, radius)
+      .lineStyle(3, 0xa9f4ff, 0.82).strokeCircle(center.x, center.y, radius)
       .lineStyle(1, 0xf7d473, 0.68).strokeCircle(center.x, center.y, 18)
       .beginPath().moveTo(center.x - 28, center.y).lineTo(center.x + 28, center.y)
       .moveTo(center.x, center.y - 28).lineTo(center.x, center.y + 28).strokePath()
@@ -640,12 +652,13 @@ export class GameScene extends Phaser.Scene {
       this.cancelAim();
       return;
     }
+    const progression = heroProgression(this.hero.level);
     const center = {
-      x: Phaser.Math.Clamp(point.x, 155, GAME_WIDTH - 155),
-      y: Phaser.Math.Clamp(point.y, 155, GAME_HEIGHT - 155),
+      x: Phaser.Math.Clamp(point.x, progression.stormRadius, GAME_WIDTH - progression.stormRadius),
+      y: Phaser.Math.Clamp(point.y, progression.stormRadius, GAME_HEIGHT - progression.stormRadius),
     };
     this.hero.mana -= ability.mana;
-    this.hero.cooldowns.r = this.simTime + ability.cooldown * 1000;
+    this.hero.cooldowns.r = this.simTime + ability.cooldown * progression.cooldownMultiplier * 1000;
     this.castStorm(center);
     this.addStormCharge(28);
     this.cancelAim(false);
@@ -851,6 +864,7 @@ export class GameScene extends Phaser.Scene {
     this.waveActive = true;
     this.spawnQueue = [];
     this.spawnedThisWave = 0;
+    this.heroParticipationXpThisWave = 0;
     let at = this.simTime + 150;
     const gapScale = TEST_MODE ? 0.08 : 1;
     for (const group of WAVES[this.currentWave - 1].spawns) {
@@ -878,6 +892,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.spawnQueue.length && !this.enemies.some((enemy) => enemy.alive)) {
       this.waveActive = false;
+      this.awardHeroXp(heroWaveClearXp(this.currentWave));
       this.gold += Math.round(waveClearReward(WAVES[this.currentWave - 1].reward, DIFFICULTIES[this.difficulty]) * this.map.goldMultiplier);
       this.score += Math.round((350 + this.currentWave * 40) * DIFFICULTIES[this.difficulty].scoreMultiplier * this.map.scoreMultiplier);
       if (this.currentWave >= WAVES.length) this.finish('victory');
@@ -907,7 +922,7 @@ export class GameScene extends Phaser.Scene {
       shieldUntil: 0, lastShieldAt: this.simTime, summonedPhase: false, contactCooldown: 0, container, art, sprite, hpBar,
       spriteBaseScale: spriteScale, spriteBaseY, motionSeed: this.nextId * 0.73,
       laneOffset: this.isBossType(type) ? 0 : ((this.nextId % 5) - 2) * (type === 'winged' ? 3.5 : 2.5), hitPulseUntil: 0,
-      elite, eliteShield: maxEliteShield, maxEliteShield, nextElitePulseAt: this.simTime + 900, eliteArt,
+      elite, eliteShield: maxEliteShield, maxEliteShield, nextElitePulseAt: this.simTime + 900, eliteArt, heroTagged: false,
     };
     container.setName(elite ? `enemy-elite-${elite}` : `enemy-${type}`);
     this.enemies.push(enemy);
@@ -1018,7 +1033,7 @@ export class GameScene extends Phaser.Scene {
       }
       if (this.hero.alive && !definition.flying && distance(enemy.container, this.hero) < definition.radius + 24 && this.simTime >= enemy.contactCooldown) {
         enemy.contactCooldown = this.simTime + 700;
-        const shieldMultiplier = this.hero.sealUntil > this.simTime ? 0.4 : 1;
+        const shieldMultiplier = this.hero.sealUntil > this.simTime ? heroProgression(this.hero.level).sealDamageMultiplier : 1;
         const bossContactDamage = enemy.type === 'warden' ? 30 : enemy.type === 'titan' ? 46 : enemy.type === 'boss' ? 64 : 13;
         this.hero.hp -= bossContactDamage * shieldMultiplier * DIFFICULTIES[this.difficulty].heroDamageTaken;
         this.drawHeroArt();
@@ -1043,8 +1058,16 @@ export class GameScene extends Phaser.Scene {
       const reward = Math.round(this.enemyDefinition(enemy.type).reward * (enemy.elite ? ELITES[enemy.elite].rewardMultiplier : 1));
       this.gold += reward;
       this.score += Math.round(reward * 10 * DIFFICULTIES[this.difficulty].scoreMultiplier * this.map.scoreMultiplier);
-      this.hero.xp += this.isBossType(enemy.type) ? 240 : enemy.elite ? 30 : 18;
-      this.updateHeroLevel();
+      if (enemy.heroTagged) {
+        const participationXp = heroParticipationXp(enemy.type, enemy.elite);
+        if (this.isBossType(enemy.type)) this.awardHeroXp(participationXp);
+        else {
+          const available = Math.max(0, heroParticipationCap(this.currentWave) - this.heroParticipationXpThisWave);
+          const awarded = Math.min(available, participationXp);
+          this.heroParticipationXpThisWave += awarded;
+          this.awardHeroXp(awarded);
+        }
+      }
     }
     if (enemy.elite) createElitePulse(this, enemy.container, enemy.elite, this.reduceMotion, false);
     if (!this.reduceMotion) {
@@ -1186,7 +1209,7 @@ export class GameScene extends Phaser.Scene {
     emit('td:sound', 'hit');
   }
 
-  private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean, armorPierce = 0): { dealt: number; hp: number; killed: boolean } {
+  private hitEnemy(enemy: EnemyUnit, rawDamage: number, magic: boolean, armorPierce = 0, heroSource = false): { dealt: number; hp: number; killed: boolean } {
     if (!enemy.alive) return { dealt: 0, hp: Math.max(0, enemy.hp), killed: false };
     const eliteArmor = enemy.elite ? ELITES[enemy.elite].armorBonus : 0;
     const armor = (this.enemyDefinition(enemy.type).armor + eliteArmor) * (magic ? 0.2 : 1 - Math.max(0, Math.min(1, armorPierce)));
@@ -1198,6 +1221,7 @@ export class GameScene extends Phaser.Scene {
     const hpOutcome = damageOutcome(enemy.hp, shieldOutcome.remainingDamage, 0);
     enemy.hp = hpOutcome.hp;
     const outcome = { dealt: shieldOutcome.absorbed + hpOutcome.dealt, hp: hpOutcome.hp, killed: hpOutcome.killed };
+    if (heroSource && outcome.dealt > 0) enemy.heroTagged = true;
     enemy.hitPulseUntil = this.simTime + (this.reduceMotion ? 45 : 115);
     this.drawEnemyHealth(enemy);
     if (hadEliteShield && enemy.eliteShield <= 0) {
@@ -1221,13 +1245,14 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const difficulty = DIFFICULTIES[this.difficulty];
+    const progression = heroProgression(this.hero.level);
     const overcharged = this.hero.overchargeUntil > this.simTime;
     if (!overcharged && this.heroOverchargeView) {
       this.heroOverchargeView.destroy(true);
       this.heroOverchargeView = null;
     }
     if (this.heroOverchargeView?.active) this.heroOverchargeView.setPosition(this.hero.x, this.hero.y).setVisible(true);
-    this.hero.mana = Math.min(HERO.maxMana, this.hero.mana + HERO.manaRegen * difficulty.heroManaRegen * (overcharged ? HERO_OVERCHARGE.manaRegenMultiplier : 1) * delta / 1000);
+    this.hero.mana = Math.min(progression.maxMana, this.hero.mana + HERO.manaRegen * progression.manaRegenMultiplier * difficulty.heroManaRegen * (overcharged ? HERO_OVERCHARGE.manaRegenMultiplier : 1) * delta / 1000);
     const horizontal = (this.keys.D.isDown ? 1 : 0) - (this.keys.A.isDown ? 1 : 0);
     const vertical = (this.keys.S.isDown ? 1 : 0) - (this.keys.W.isDown ? 1 : 0);
     let focus = this.focusedEnemy();
@@ -1271,12 +1296,12 @@ export class GameScene extends Phaser.Scene {
       const inRange = this.enemies.filter((enemy) => enemy.alive && distance(this.hero, enemy.container) <= HERO.attackRange);
       const target = (focus && inRange.includes(focus) ? focus : null) ?? inRange.sort((a, b) => b.progress - a.progress)[0];
       if (target) {
-        this.hero.nextAttackAt = this.simTime + HERO.attackMs / (overcharged ? HERO_OVERCHARGE.attackSpeedMultiplier : 1);
+        this.hero.nextAttackAt = this.simTime + HERO.attackMs / progression.attackSpeedMultiplier / (overcharged ? HERO_OVERCHARGE.attackSpeedMultiplier : 1);
         const targetPoint = { x: target.container.x, y: target.container.y - 8 };
         this.visualEvents.attack += 1;
         animateHeroAttack(this, this.hero.sprite, targetPoint, this.reduceMotion);
         launchStormSpear(this, { x: this.hero.x, y: this.hero.y - 38 }, targetPoint, this.reduceMotion);
-        this.hitEnemy(target, HERO.attackDamage * difficulty.heroDamage * (overcharged ? HERO_OVERCHARGE.damageMultiplier : 1) * (TEST_MODE ? 2.5 : 1), true);
+        this.hitEnemy(target, HERO.attackDamage * progression.attackDamageMultiplier * difficulty.heroDamage * (overcharged ? HERO_OVERCHARGE.damageMultiplier : 1) * (TEST_MODE ? 2.5 : 1), true, 0, true);
         this.addStormCharge(5);
         emit('td:sound', 'shot');
       }
@@ -1305,9 +1330,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private respawnHero(): void {
+    const progression = heroProgression(this.hero.level);
     this.hero.alive = true;
-    this.hero.hp = HERO.maxHp;
-    this.hero.mana = HERO.maxMana * 0.6;
+    this.hero.hp = progression.maxHp;
+    this.hero.mana = progression.maxMana * 0.6;
     this.hero.x = this.map.crystal.x - 70;
     this.hero.y = this.map.crystal.y + 80;
     this.hero.target = { x: this.hero.x, y: this.hero.y };
@@ -1318,14 +1344,27 @@ export class GameScene extends Phaser.Scene {
     if (focus) this.drawHeroFocusMarker(focus);
   }
 
+  private awardHeroXp(amount: number): void {
+    if (amount <= 0 || this.hero.level >= HERO_LEVELS.length) return;
+    this.hero.xp = Math.min(HERO_LEVELS.at(-1)!.xp, this.hero.xp + Math.round(amount));
+    this.updateHeroLevel();
+  }
+
   private updateHeroLevel(): void {
     const previous = this.hero.level;
-    this.hero.level = this.hero.xp >= 240 ? 3 : this.hero.xp >= 100 ? 2 : 1;
+    this.hero.level = heroLevelForXp(this.hero.xp);
     if (this.hero.level > previous) {
-      this.hero.hp = HERO.maxHp;
-      this.hero.mana = HERO.maxMana;
+      const progression = heroProgression(this.hero.level);
+      this.hero.hp = progression.maxHp;
+      this.hero.mana = progression.maxMana;
       const glow = this.add.circle(this.hero.x, this.hero.y, 25, 0xffe070, 0.55).setDepth(30);
       this.tweens.add({ targets: glow, scale: 4, alpha: 0, duration: 550, onComplete: () => glow.destroy() });
+      const label = this.add.text(this.hero.x, this.hero.y - 88, `УРОВЕНЬ ${this.hero.level}\n${progression.perk}`, {
+        fontFamily: 'Arial', fontSize: '12px', color: '#fff0a6', align: 'center', fontStyle: 'bold', stroke: '#171020', strokeThickness: 4,
+      }).setOrigin(0.5).setDepth(60);
+      this.tweens.add({ targets: label, y: label.y - 34, alpha: 0, duration: this.reduceMotion ? 500 : 1500, onComplete: () => label.destroy() });
+      emit('td:sound', 'wave');
+      this.emitHud(true);
     }
   }
 
@@ -1335,7 +1374,7 @@ export class GameScene extends Phaser.Scene {
 
   private addStormCharge(amount: number): void {
     if (!this.hero.alive || this.hero.overchargeUntil > this.simTime || amount <= 0) return;
-    this.hero.stormCharge = Math.min(100, this.hero.stormCharge + amount);
+    this.hero.stormCharge = Math.min(100, this.hero.stormCharge + amount * heroProgression(this.hero.level).stormChargeMultiplier);
     if (this.hero.stormCharge < 100) return;
     this.hero.stormCharge = 0;
     this.hero.overchargeUntil = this.simTime + HERO_OVERCHARGE.durationMs;
@@ -1361,8 +1400,9 @@ export class GameScene extends Phaser.Scene {
       this.emitHud(true);
       return;
     }
+    const progression = heroProgression(this.hero.level);
     this.hero.mana -= ability.mana;
-    this.hero.cooldowns[key] = this.simTime + ability.cooldown * 1000;
+    this.hero.cooldowns[key] = this.simTime + ability.cooldown * progression.cooldownMultiplier * 1000;
     if (key === 'q') this.castChainLightning();
     if (key === 'w') this.castDash();
     if (key === 'e') this.castSeal();
@@ -1373,13 +1413,14 @@ export class GameScene extends Phaser.Scene {
 
   private castChainLightning(): void {
     this.visualEvents.q += 1;
+    const progression = heroProgression(this.hero.level);
     createThunderBurst(this, { x: this.hero.x, y: this.hero.y - 24 }, this.reduceMotion, 0.72);
     const candidates = this.enemies.map((enemy) => ({ id: enemy.id, x: enemy.container.x, y: enemy.container.y, hp: enemy.hp, maxHp: enemy.maxHp, progress: enemy.progress, flying: this.enemyDefinition(enemy.type).flying, alive: enemy.alive }));
     const focus = this.focusedEnemy();
     const focusedFirst = focus && distance(this.hero, focus.container) <= 285 ? focus : null;
     const ids = focusedFirst
-      ? [focusedFirst.id, ...chainTargets(focusedFirst.container, candidates.filter((candidate) => candidate.id !== focusedFirst.id), 4 + this.hero.level, 235)]
-      : chainTargets(this.hero, candidates, 5 + this.hero.level, 235);
+      ? [focusedFirst.id, ...chainTargets(focusedFirst.container, candidates.filter((candidate) => candidate.id !== focusedFirst.id), progression.qChains - 1, 235)]
+      : chainTargets(this.hero, candidates, progression.qChains, 235);
     let from: Point = { x: this.hero.x, y: this.hero.y };
     ids.forEach((id, index) => {
       const enemy = this.enemies.find((candidate) => candidate.id === id);
@@ -1390,23 +1431,24 @@ export class GameScene extends Phaser.Scene {
         createLightningBolt(this, boltFrom, boltTo, this.reduceMotion, Math.max(0.58, 1.12 - index * 0.08));
         createThunderBurst(this, boltTo, this.reduceMotion, Math.max(0.52, 0.85 - index * 0.04));
       });
-      this.hitEnemy(enemy, HERO.abilities.q.damage * this.heroDamageMultiplier() * (1 - index * 0.08), true);
+      this.hitEnemy(enemy, HERO.abilities.q.damage * progression.qDamageMultiplier * this.heroDamageMultiplier() * (1 - index * 0.08), true, 0, true);
       from = boltTo;
     });
   }
 
   private castDash(): void {
     this.visualEvents.w += 1;
+    const progression = heroProgression(this.hero.level);
     const horizontal = (this.keys.D.isDown ? 1 : 0) - (this.keys.A.isDown ? 1 : 0);
     const vertical = (this.keys.S.isDown ? 1 : 0) - (this.keys.W.isDown ? 1 : 0);
     const focus = this.focusedEnemy();
     const pointer = this.input.activePointer;
     const pointerWorld = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const from = { x: this.hero.x, y: this.hero.y };
-    const desired = dashDestination(from, { x: horizontal, y: vertical }, focus ? { x: focus.container.x, y: focus.container.y } : null, pointerWorld, 270);
+    const desired = dashDestination(from, { x: horizontal, y: vertical }, focus ? { x: focus.container.x, y: focus.container.y } : null, pointerWorld, progression.dashDistance);
     const to = { x: Phaser.Math.Clamp(desired.x, 20, GAME_WIDTH - 20), y: Phaser.Math.Clamp(desired.y, 20, GAME_HEIGHT - 20) };
     this.enemies.filter((enemy) => enemy.alive && pointToLineDistance(enemy.container, from, to) <= 58)
-      .forEach((enemy) => this.hitEnemy(enemy, HERO.abilities.w.damage * this.heroDamageMultiplier(), true));
+      .forEach((enemy) => this.hitEnemy(enemy, HERO.abilities.w.damage * progression.wDamageMultiplier * this.heroDamageMultiplier(), true, 0, true));
     this.hero.x = to.x;
     this.hero.y = to.y;
     this.hero.target = to;
@@ -1417,11 +1459,12 @@ export class GameScene extends Phaser.Scene {
 
   private castSeal(): void {
     this.visualEvents.e += 1;
-    this.hero.sealUntil = this.simTime + HERO.abilities.e.duration * 1000;
+    const duration = heroProgression(this.hero.level).sealDuration;
+    this.hero.sealUntil = this.simTime + duration * 1000;
     this.heroSealView?.destroy(true);
     const seal = createStormShield(this, { x: this.hero.x, y: this.hero.y }, this.reduceMotion);
     this.heroSealView = seal;
-    this.time.delayedCall(HERO.abilities.e.duration * 1000, () => {
+    this.time.delayedCall(duration * 1000, () => {
       if (this.heroSealView === seal) this.heroSealView = null;
       if (seal.active) seal.destroy(true);
     });
@@ -1429,8 +1472,16 @@ export class GameScene extends Phaser.Scene {
 
   private castStorm(center: Point): void {
     this.visualEvents.r += 1;
+    const progression = heroProgression(this.hero.level);
     const view = createStormField(this, center, this.reduceMotion);
-    this.storms.push({ x: center.x, y: center.y, endsAt: this.simTime + HERO.abilities.r.duration * 1000, nextTick: this.simTime, view });
+    this.storms.push({
+      x: center.x, y: center.y,
+      endsAt: this.simTime + progression.stormDuration * 1000,
+      nextTick: this.simTime,
+      radius: progression.stormRadius,
+      damage: HERO.abilities.r.damage * progression.stormDamageMultiplier * this.heroDamageMultiplier(),
+      view,
+    });
   }
 
   private updateStorms(): void {
@@ -1441,9 +1492,9 @@ export class GameScene extends Phaser.Scene {
         this.storms.splice(index, 1);
       } else if (this.simTime >= storm.nextTick) {
         storm.nextTick = this.simTime + 500;
-        const impacted = this.enemies.filter((enemy) => enemy.alive && distance(enemy.container, storm) <= 155);
+        const impacted = this.enemies.filter((enemy) => enemy.alive && distance(enemy.container, storm) <= storm.radius);
         const targets = impacted.map((enemy) => ({ x: enemy.container.x, y: enemy.container.y - 7 }));
-        impacted.forEach((enemy) => this.hitEnemy(enemy, HERO.abilities.r.damage * this.heroDamageMultiplier(), true));
+        impacted.forEach((enemy) => this.hitEnemy(enemy, storm.damage, true, 0, true));
         const strike = targets.length
           ? targets[Phaser.Math.Between(0, targets.length - 1)]
           : { x: storm.x + Phaser.Math.Between(-105, 105), y: storm.y + Phaser.Math.Between(-95, 95) };
@@ -1581,16 +1632,26 @@ export class GameScene extends Phaser.Scene {
     const auraTargets = selected && selected.type === 'boost' && selectedLevel
       ? this.towers.filter((tower) => tower.type !== 'boost' && distance(selected, tower) <= selectedLevel.range).length
       : 0;
-    const nextXp = this.hero.level === 1 ? 100 : this.hero.level === 2 ? 240 : 240;
+    const progression = heroProgression(this.hero.level);
+    const currentLevel = HERO_LEVELS[this.hero.level - 1];
+    const nextLevel = HERO_LEVELS[Math.min(this.hero.level, HERO_LEVELS.length - 1)];
+    const nextXp = nextLevel.xp;
     const boss = this.enemies.find((enemy) => this.isBossType(enemy.type) && enemy.alive);
     const heroFocus = this.focusedEnemy();
     const heroCommand: HeroCommand = this.aimAbility ? 'aim'
       : this.hero.moveCommand ? 'move'
         : heroFocus ? (this.hero.stance === 'pursuit' ? 'pursuit' : 'focus') : 'hold';
+    const abilityDetails = {
+      q: `${Math.round(HERO.abilities.q.damage * progression.qDamageMultiplier)} урона · ${progression.qChains} целей`,
+      w: `${Math.round(HERO.abilities.w.damage * progression.wDamageMultiplier)} урона · рывок ${progression.dashDistance}`,
+      e: `${progression.sealDuration}с · блок ${Math.round((1 - progression.sealDamageMultiplier) * 100)}%`,
+      r: `${Math.round(HERO.abilities.r.damage * progression.stormDamageMultiplier)}/тик · радиус ${progression.stormRadius} · ${progression.stormDuration}с`,
+    };
     const abilityState = (key: 'q' | 'w' | 'e' | 'r') => ({
       cooldown: Math.max(0, (this.hero.cooldowns[key] - this.simTime) / 1000),
       mana: HERO.abilities[key].mana,
       locked: key === 'r' && this.hero.level < HERO.abilities.r.requiredLevel,
+      detail: abilityDetails[key],
     });
     const upcomingIndex = this.waveActive ? Math.max(0, this.currentWave - 1) : Math.min(this.currentWave, WAVES.length - 1);
     return {
@@ -1615,8 +1676,9 @@ export class GameScene extends Phaser.Scene {
         damageDealt: selected.damageDealt, kills: selected.kills, boosted: selectedBoosted, auraTargets,
       } : null,
       hero: {
-        x: this.hero.x, y: this.hero.y, hp: Math.max(0, this.hero.hp), maxHp: HERO.maxHp, mana: this.hero.mana, maxMana: HERO.maxMana, xp: this.hero.xp,
-        xpNext: nextXp, level: this.hero.level, alive: this.hero.alive, respawn: Math.max(0, (this.hero.respawnAt - this.simTime) / 1000),
+        x: this.hero.x, y: this.hero.y, hp: Math.max(0, this.hero.hp), maxHp: progression.maxHp, mana: this.hero.mana, maxMana: progression.maxMana, xp: this.hero.xp,
+        xpLevelStart: currentLevel.xp, xpNext: nextXp, level: this.hero.level, perk: progression.perk,
+        alive: this.hero.alive, respawn: Math.max(0, (this.hero.respawnAt - this.simTime) / 1000),
         stance: this.hero.stance, focusTarget: heroFocus ? (heroFocus.elite ? ELITES[heroFocus.elite].name : this.enemyDefinition(heroFocus.type).name) : null,
         command: heroCommand, aimAbility: this.aimAbility, stormCharge: this.hero.stormCharge,
         overcharge: Math.max(0, (this.hero.overchargeUntil - this.simTime) / 1000),

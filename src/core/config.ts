@@ -89,9 +89,33 @@ export const MAPS: Record<string, MapDefinition> = {
     enemyHp: 1.25, enemyArmor: 1.12, enemySpeed: 1.09, goldMultiplier: 0.84, scoreMultiplier: 1.5,
     accent: 0xff623d, routeColor: 0xffc06b, tint: 0xe0b09d,
   },
+  stormspire: {
+    id: 'stormspire', number: 4, name: 'Грозовой шпиль', subtitle: 'НАД ОБЛАКАМИ',
+    description: 'Обрывы и долгие прямые: скоростная элита наказывает за слабый контроль.', asset: 'assets/stormspire-map.webp',
+    path: [
+      { x: 28, y: 490 }, { x: 455, y: 490 }, { x: 455, y: 330 }, { x: 650, y: 330 },
+      { x: 700, y: 360 }, { x: 930, y: 360 }, { x: 930, y: 220 }, { x: 1010, y: 145 }, { x: 1082, y: 115 },
+    ],
+    crystal: { x: 1120, y: 115 },
+    forbidden: [{ x: 205, y: 160, radius: 74 }, { x: 595, y: 120, radius: 64 }, { x: 710, y: 555, radius: 72 }, { x: 1045, y: 545, radius: 68 }],
+    enemyHp: 1.38, enemyArmor: 1.18, enemySpeed: 1.12, goldMultiplier: 0.79, scoreMultiplier: 1.8,
+    accent: 0x45dcff, routeColor: 0xccecff, tint: 0xb5ccdf,
+  },
+  abyss: {
+    id: 'abyss', number: 5, name: 'Сердце Бездны', subtitle: 'ПРЕДЕЛ РАЗЛОМА',
+    description: 'Финальная глава: сжатая экономика, максимальная броня и опасные повороты.', asset: 'assets/abyss-heart-map.webp',
+    path: [
+      { x: 28, y: 115 }, { x: 690, y: 115 }, { x: 690, y: 370 }, { x: 305, y: 370 },
+      { x: 305, y: 515 }, { x: 455, y: 515 }, { x: 455, y: 480 }, { x: 1082, y: 480 },
+    ],
+    crystal: { x: 1120, y: 480 },
+    forbidden: [{ x: 160, y: 360, radius: 66 }, { x: 505, y: 265, radius: 72 }, { x: 845, y: 280, radius: 78 }, { x: 820, y: 610, radius: 68 }],
+    enemyHp: 1.52, enemyArmor: 1.24, enemySpeed: 1.16, goldMultiplier: 0.74, scoreMultiplier: 2.1,
+    accent: 0xe653ff, routeColor: 0xf2cfff, tint: 0xd3b0d9,
+  },
 };
 
-export const MAP_ORDER = ['valley', 'frozen', 'bastion'] as const;
+export const MAP_ORDER = ['valley', 'frozen', 'bastion', 'stormspire', 'abyss'] as const;
 export const PATH = VALLEY_PATH;
 export const CRYSTAL = VALLEY_CRYSTAL;
 export const FORBIDDEN_ZONES = VALLEY_FORBIDDEN;
@@ -244,3 +268,16 @@ export const HERO_OVERCHARGE = {
   damageMultiplier: 1.22,
   manaRegenMultiplier: 1.35,
 } as const;
+
+export const HERO_LEVELS = [
+  { level: 1, xp: 0, perk: 'Пробуждённое копьё · базовые атаки и молния' },
+  { level: 2, xp: 80, perk: 'Электропроводность · усилены атака и запас маны' },
+  { level: 3, xp: 190, perk: 'Сердце бури · открыта способность R' },
+  { level: 4, xp: 330, perk: 'Грозовой след · дальше и сильнее рывок' },
+  { level: 5, xp: 500, perk: 'Разветвлённая молния · Q бьёт больше целей' },
+  { level: 6, xp: 700, perk: 'Рунный щит · E дольше и крепче защищает' },
+  { level: 7, xp: 930, perk: 'Копьё грома · быстрее базовые атаки' },
+  { level: 8, xp: 1190, perk: 'Око шторма · R шире и дольше бушует' },
+  { level: 9, xp: 1480, perk: 'Грозовой резонанс · быстрее заряд и откаты' },
+  { level: 10, xp: 1800, perk: 'Аватар бури · максимальная сила всех умений' },
+] as const;
