@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  absorbShield, applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageOutcome, dashDestination, distanceToPath, earlyStartBonus,
+  absorbShield, applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageAffinityMultiplier, damageOutcome, dashDestination, distanceToPath, earlyStartBonus,
   eliteAffixForSpawn, eliteCadence, expectedEliteCount, heroLevelForXp, heroParticipationCap, heroParticipationXp, heroProgression, heroWaveClearXp, isWaveComplete, loseLives, matchResult, placementFailure, pointToLineDistance, roundedPath,
-  scaleEnemy, selectTarget, sellValue, snapToGrid, upgrade,
+  scaleEnemy, selectTarget, sellValue, slowEffectMultiplier, snapToGrid, tacticalIncomeMultiplier, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
 import { DIFFICULTIES, ELITES, ENEMIES, HERO_LEVELS, HERO_MECHANICS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './config';
@@ -72,6 +72,22 @@ describe('боевые формулы', () => {
     expect(applySlow(100, -1)).toBe(100);
   });
 
+  it('создаёт контр-типы вместо универсального лучшего урона', () => {
+    expect(damageAffinityMultiplier('brute', null, 'arrow', 'rift')).toBeCloseTo(0.58);
+    expect(damageAffinityMultiplier('brute', null, 'frost', 'rift')).toBeCloseTo(1.3);
+    expect(damageAffinityMultiplier('runner', null, 'siege', 'rift')).toBeCloseTo(1.35);
+    expect(damageAffinityMultiplier('winged', null, 'arrow', 'rift')).toBeCloseTo(1.35);
+    expect(damageAffinityMultiplier('boss', null, 'storm', 'rift')).toBeCloseTo(0.6);
+    expect(damageAffinityMultiplier('brute', null, 'arrow', 'story')).toBeGreaterThan(0.8);
+  });
+
+  it('делает Нулификатора целью для осады и ослабляет контроль', () => {
+    expect(damageAffinityMultiplier('brute', 'nullifier', 'siege', 'rift')).toBeCloseTo(1.7825);
+    expect(damageAffinityMultiplier('brute', 'nullifier', 'storm', 'rift')).toBeCloseTo(0.38);
+    expect(slowEffectMultiplier('brute', 'nullifier')).toBe(0.25);
+    expect(slowEffectMultiplier('boss', null)).toBe(0.45);
+  });
+
   it('выбирает первую или самую сильную допустимую цель', () => {
     const targets = [
       { id: 1, hp: 50, maxHp: 100, progress: 80, flying: false, alive: true },
@@ -136,6 +152,14 @@ describe('строительство и экономика', () => {
       { type: 'raider', count: 4, gapMs: 400 },
     ])).toEqual([{ type: 'raider', count: 7 }, { type: 'runner', count: 2 }]);
   });
+
+  it('раскрывает полный доход Разлома только тремя боевыми доктринами', () => {
+    expect(tacticalIncomeMultiplier('standard', ['archer'])).toBe(1);
+    expect(tacticalIncomeMultiplier('rift', [])).toBe(0.5);
+    expect(tacticalIncomeMultiplier('rift', ['archer', 'boost'])).toBe(0.62);
+    expect(tacticalIncomeMultiplier('rift', ['archer', 'frost', 'boost'])).toBe(0.8);
+    expect(tacticalIncomeMultiplier('rift', ['archer', 'frost', 'siege'])).toBe(1);
+  });
 });
 
 describe('состояние матча', () => {
@@ -144,6 +168,12 @@ describe('состояние матча', () => {
     const bossTypes = new Set(['warden', 'titan', 'boss']);
     const bossWaves = WAVES.flatMap((wave, index) => wave.spawns.some((spawn) => bossTypes.has(spawn.type)) ? [index + 1] : []);
     expect(bossWaves).toEqual([7, 14, 20]);
+  });
+
+  it('начиная с пятой волны сводит разные угрозы одновременно', () => {
+    WAVES.slice(4).forEach((wave) => {
+      expect(wave.spawns.some((spawn) => spawn.startMs !== undefined)).toBe(true);
+    });
   });
 
   it('завершает волну только после очистки очереди и карты', () => {
@@ -171,16 +201,17 @@ describe('элитные мутации', () => {
   it('повышает частоту элиты вместе со сложностью и только после третьей волны', () => {
     expect(eliteCadence('story')).toBe(12);
     expect(eliteCadence('standard')).toBe(9);
-    expect(eliteCadence('rift')).toBe(7);
+    expect(eliteCadence('rift')).toBe(5);
     expect(expectedEliteCount(3, 40, 'rift')).toBe(0);
-    expect(expectedEliteCount(14, 40, 'rift')).toBe(5);
+    expect(expectedEliteCount(14, 40, 'rift')).toBe(8);
   });
 
-  it('не превращает боссов в элиту и постепенно открывает три свойства', () => {
-    expect(eliteAffixForSpawn(4, 7, 'rift', 'boss')).toBeNull();
-    expect(eliteAffixForSpawn(4, 7, 'rift', 'raider')).toBe('swift');
-    const lateAffixes = new Set([7, 14, 21, 28, 35, 42].map((index) => eliteAffixForSpawn(14, index, 'rift', 'raider')));
-    expect(lateAffixes).toEqual(new Set(['swift', 'bulwark', 'regenerator']));
+  it('не превращает боссов в элиту и постепенно открывает четыре свойства', () => {
+    expect(eliteAffixForSpawn(4, 5, 'rift', 'boss')).toBeNull();
+    expect(eliteAffixForSpawn(4, 5, 'rift', 'raider')).toBe('swift');
+    const lateAffixes = new Set([5, 10, 15, 20].map((index) => eliteAffixForSpawn(14, index, 'rift', 'raider')));
+    expect(lateAffixes).toEqual(new Set(['swift', 'bulwark', 'regenerator', 'nullifier']));
+    expect(eliteAffixForSpawn(14, 5, 'rift', 'winged')).not.toBe('nullifier');
   });
 
   it('делает элиту опаснее, но всегда повышает награду', () => {

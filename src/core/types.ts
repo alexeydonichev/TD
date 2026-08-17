@@ -1,7 +1,8 @@
 export type Point = { x: number; y: number };
 export type TowerType = 'archer' | 'frost' | 'siege' | 'boost';
+export type DamageChannel = 'arrow' | 'frost' | 'siege' | 'storm';
 export type EnemyType = 'raider' | 'runner' | 'brute' | 'winged' | 'warden' | 'titan' | 'boss';
-export type EliteType = 'swift' | 'bulwark' | 'regenerator';
+export type EliteType = 'swift' | 'bulwark' | 'regenerator' | 'nullifier';
 export type TargetMode = 'first' | 'strongest';
 export type Difficulty = 'story' | 'standard' | 'rift';
 export type MapId = 'valley' | 'frozen' | 'bastion' | 'stormspire' | 'abyss';
@@ -111,6 +112,7 @@ export interface WaveSpawn {
   type: EnemyType;
   count: number;
   gapMs: number;
+  startMs?: number;
 }
 
 export interface WaveDefinition {

@@ -1,5 +1,5 @@
 import './style.css';
-import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_MECHANICS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
+import { DIFFICULTIES, EARLY_START_GOLD_PER_SECOND, ENEMIES, ENEMY_TACTICS, GAME_HEIGHT, GAME_WIDTH, HERO, HERO_MECHANICS, HERO_OVERCHARGE, MAP_ORDER, MAPS, TOWERS, WAVES } from './core/config';
 import { earlyStartBonus, expectedEliteCount, heroWaveClearXp, waveClearReward, waveRoster } from './core/rules';
 import type { Difficulty, MapId, TowerType } from './core/types';
 import { AudioManager, type SoundName } from './game/AudioManager';
@@ -42,6 +42,7 @@ app.innerHTML = `
         <p id="wave-intel">Налётчики · наземные</p>
         <div id="wave-roster" class="wave-roster" role="list" aria-label="Состав следующей волны"></div>
         <div id="elite-warning" class="elite-warning hidden"><span>✦ ЭЛИТНЫЕ МУТАЦИИ</span><b id="elite-count"></b></div>
+        <div id="doctrine-warning" class="doctrine-warning hidden"><span><b id="doctrine-value">ДОКТРИНЫ 0/3</b><small id="doctrine-copy">Боевой доход 50%</small></span><i id="doctrine-income">×0,50</i></div>
         <p id="strategy-hint" class="strategy-hint">Стрелковые башни — надёжный первый рубеж.</p>
       </div>
       <div class="wave-economy"><span id="wave-size"></span><span id="wave-xp"></span><span id="wave-reward"></span></div>
@@ -116,7 +117,7 @@ app.innerHTML = `
     </aside>
 
     <section id="boss-bar" class="boss-bar glass hidden">
-      <div><strong id="boss-name">ВЛАДЫКА РАЗЛОМА</strong><span id="boss-phase">ФАЗА I</span><span id="boss-shield"></span></div>
+      <div><strong id="boss-name">ВЛАДЫКА РАЗЛОМА</strong><span id="boss-phase">ФАЗА I</span><span id="boss-shield"></span><span id="boss-strike"></span></div>
       <div class="bar"><i id="boss-fill"></i><b id="boss-value"></b></div>
     </section>
 
@@ -171,7 +172,9 @@ app.innerHTML = `
         <p><b>Грозовая перегрузка:</b> атаки и способности наполняют индикатор возле портрета. При 100% герой на ${HERO_OVERCHARGE.durationMs / 1000} секунд получает +${Math.round((HERO_OVERCHARGE.attackSpeedMultiplier - 1) * 100)}% скорости атак, +${Math.round((HERO_OVERCHARGE.damageMultiplier - 1) * 100)}% урона и +${Math.round((HERO_OVERCHARGE.manaRegenMultiplier - 1) * 100)}% восстановления маны.</p>
         <p><b>Опыт героя:</b> герой развивается с 1-го до 10-го уровня заново на каждой карте. Завершение волн гарантированно ведёт примерно к 8-му уровню; 9–10-й открываются за активные попадания по врагам, элите и боссам. Каждый уровень усиливает здоровье, ману, копьё и способности.</p>
         <p><b>Связки навыков:</b> Q оставляет на врагах Проводимость на ${HERO_MECHANICS.conductiveDurationMs / 1000} секунд, после чего R наносит им +${Math.round((HERO_MECHANICS.conductiveStormMultiplier - 1) * 100)}% урона. Shift даёт ${HERO_MECHANICS.dashPhaseMs / 1000} секунды неуязвимости после скачка. E не только защищает героя, но и усиливает урон башен в ауре на ${Math.round((HERO_MECHANICS.sealTowerDamageMultiplier - 1) * 100)}%.</p>
-        <p><b>Элитные враги:</b> розовые Стремительные ускорены; голубые Бастионы защищены отдельным щитом; зелёные Регенераторы восстанавливают здоровье. За каждого полагается повышенная награда.</p>
+        <p><b>Контр-типы:</b> стрелы сбивают Крылатых, мороз ломает Тяжёлых, осадные ядра уничтожают Бегунов, Титанов и боссов. В максимальной сложности сопротивления действуют в полную силу.</p>
+        <p><b>Элитные враги:</b> розовые Стремительные ускорены; голубые Бастионы защищены щитом; зелёные Регенераторы восстанавливают здоровье; золотые Нулификаторы подавляют ману героя и почти неуязвимы к грозе, но слабы против осады.</p>
+        <p><b>Тактический доход:</b> на сложности «Повелитель бури» награды за врагов и зачистку раскрываются полностью только при трёх боевых доктринах — стрелковой, ледяной и осадной. Башня усиления поддерживает доктрины, но не заменяет их.</p>
         <p><b>Карта:</b> 1–4 — башни · стрелки или средняя кнопка — камера · колесо — масштаб · F — найти героя · пробел — пауза.</p>
         <button id="close-settings" class="primary">Готово</button>
       </section>
@@ -550,7 +553,7 @@ function renderHud(state: HudState): void {
   get('wave-title').textContent = state.waveTitle;
   get('wave-intel').textContent = state.waveIntel;
   const hintedWave = Math.max(1, state.waveActive ? state.wave : state.wave + 1);
-  renderWaveBriefing(hintedWave, state.waveActive, state.difficulty, state.mapGoldMultiplier);
+  renderWaveBriefing(hintedWave, state.waveActive, state.difficulty, state.mapGoldMultiplier, state.doctrineTypes, state.incomeMultiplier);
   get('strategy-hint').textContent = strategyHint(hintedWave);
   get('countdown').textContent = state.waveActive ? 'ИДЁТ ВОЛНА' : `00:${Math.ceil(state.countdown).toString().padStart(2, '0')}`;
   get<HTMLButtonElement>('start-wave').disabled = state.waveActive || state.wave >= state.totalWaves || state.result !== 'playing';
@@ -577,10 +580,10 @@ function renderHud(state: HudState): void {
   if (tutorialStep === 4 && (state.selectedTower?.level ?? 0) > 1) showTutorial(-1);
 }
 
-function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Difficulty, mapGoldMultiplier: number): void {
+function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Difficulty, mapGoldMultiplier: number, doctrineTypes: number, incomeMultiplier: number): void {
   get('wave-kicker').textContent = active ? `ВОЛНА ${waveNumber} В БОЮ` : `СЛЕДУЮЩАЯ УГРОЗА · ВОЛНА ${waveNumber}`;
   const wave = WAVES[Math.min(WAVES.length - 1, Math.max(0, waveNumber - 1))];
-  const briefingKey = `${waveNumber}-${difficulty}`;
+  const briefingKey = `${waveNumber}-${difficulty}-${doctrineTypes}-${incomeMultiplier}`;
   if (!wave || lastBriefedWave === briefingKey) return;
   lastBriefedWave = briefingKey;
   const roster = waveRoster(wave.spawns);
@@ -589,18 +592,24 @@ function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Dif
   const eliteWarning = get('elite-warning');
   eliteWarning.classList.toggle('hidden', eliteCount === 0);
   get('elite-count').textContent = eliteCount > 0 ? `≈ ${eliteCount}` : '';
-  eliteWarning.title = 'Стремительные ускорены, Бастионы защищены щитом, Регенераторы восстанавливают здоровье.';
+  eliteWarning.title = 'Стремительные ускорены; Бастионы защищены щитом; Регенераторы лечатся; Нулификаторы подавляют героя.';
+  const doctrineWarning = get('doctrine-warning');
+  doctrineWarning.classList.toggle('hidden', difficulty !== 'rift');
+  get('doctrine-value').textContent = `ДОКТРИНЫ ${doctrineTypes}/3`;
+  get('doctrine-copy').textContent = doctrineTypes >= 3 ? 'Полный боевой доход' : `Боевой доход ${Math.round(incomeMultiplier * 100)}% · нужны стрелы, мороз и осада`;
+  get('doctrine-income').textContent = `×${incomeMultiplier.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  doctrineWarning.classList.toggle('complete', doctrineTypes >= 3);
   const rosterElement = get('wave-roster');
   rosterElement.innerHTML = roster.map(({ type, count }) => {
     const enemy = ENEMIES[type];
+    const tactics = ENEMY_TACTICS[type];
     const boss = type === 'warden' || type === 'titan' || type === 'boss';
-    const trait = boss ? 'босс' : enemy.flying ? 'воздух' : enemy.armor >= 20 ? 'броня' : 'земля';
-    return `<span class="enemy-chip${boss ? ' boss' : ''}" data-enemy="${type}" role="listitem" title="${enemy.name}: ${trait}"><i aria-hidden="true"></i><b>${enemy.name}</b><em>×${count}</em></span>`;
+    return `<span class="enemy-chip${boss ? ' boss' : ''}" data-enemy="${type}" role="listitem" title="${enemy.name}. ${tactics.role}: ${tactics.detail}"><i aria-hidden="true"></i><span><b>${enemy.name}</b><small>${tactics.role}</small></span><em>×${count}</em></span>`;
   }).join('');
   rosterElement.setAttribute('aria-label', `Состав волны ${waveNumber}: ${roster.map(({ type, count }) => `${ENEMIES[type].name}, ${count}`).join('; ')}`);
   get('wave-size').textContent = `${total} ${enemyCountLabel(total)}`;
   get('wave-xp').textContent = `Герой +${heroWaveClearXp(waveNumber)} XP`;
-  get('wave-reward').textContent = `Зачистка +◈ ${Math.round(waveClearReward(wave.reward, DIFFICULTIES[difficulty]) * mapGoldMultiplier)}`;
+  get('wave-reward').textContent = `Зачистка +◈ ${Math.round(waveClearReward(wave.reward, DIFFICULTIES[difficulty]) * mapGoldMultiplier * incomeMultiplier)}`;
 }
 
 function enemyCountLabel(count: number): string {
@@ -613,16 +622,16 @@ function enemyCountLabel(count: number): string {
 }
 
 function strategyHint(wave: number): string {
-  if (wave <= 2) return 'Стрелковые башни держат рубеж; герой получает дополнительный XP за личные попадания.';
-  if (wave <= 4) return 'Стремительную элиту перехватывайте льдом и героем: она приносит 8 XP участия.';
-  if (wave <= 6) return 'К концу 6-й волны герой гарантированно открывает R — сохраните ману к боссу.';
-  if (wave === 7) return 'БОСС I: переждите щит, герой должен перехватить призванную стаю.';
-  if (wave <= 10) return 'Элитный Бастион несёт отдельный щит: разбивайте его сосредоточенным огнём.';
-  if (wave <= 13) return 'Улучшайте башни до III уровня и держите героя рядом с элитой ради заряда бури.';
-  if (wave === 14) return 'БОСС II: броню Титана лучше всего ломают осадные и магические атаки.';
-  if (wave <= 17) return 'Регенераторов добивайте фокусом: пауза в огне возвращает им здоровье.';
-  if (wave <= 19) return 'Соберите 100% заряда героя: Перегрузка ускоряет атаки и усиливает грозовой урон.';
-  return 'БОСС III: его прорыв уничтожит Кристалл. Сохраните Сердце бури для второй фазы.';
+  if (wave <= 2) return 'Стрелы держат налётчиков; заранее откройте вторую доктрину ради экономики.';
+  if (wave <= 4) return 'Бегуны устойчивы к стрелам, но получают +35% от осадных ядер.';
+  if (wave <= 6) return 'Тяжёлые режут стрелковый урон на 42%: мороз и осада обязательны.';
+  if (wave === 7) return 'БОСС I: выйдите из красной зоны удара и разбирайте подкрепление отдельной линией.';
+  if (wave <= 10) return 'Крылатые уязвимы к стрелам, но мороз почти не действует; следите за смешанной группой.';
+  if (wave <= 13) return 'Нулификатор высасывает ману и гасит грозу — срочно фокусируйте его осадой.';
+  if (wave === 14) return 'БОСС II: ядра наносят Титану +30%; его удар по герою отмечен заранее.';
+  if (wave <= 17) return 'Регенераторов добивайте фокусом, а Бастионы вскрывайте ядрами.';
+  if (wave <= 19) return 'Одновременные угрозы требуют трёх линий огня; герой закрывает только одну.';
+  return 'БОСС III: гроза ослаблена на 40%. Уклоняйтесь от меток и сохраните осаду для второй фазы.';
 }
 
 function russianCount(count: number, one: string, few: string, many: string): string {
@@ -675,9 +684,12 @@ function renderHero(state: HudState): void {
   const overcharged = hero.overcharge > 0;
   const heroPanel = document.querySelector<HTMLElement>('.hero-panel')!;
   heroPanel.classList.toggle('overcharged', overcharged);
+  heroPanel.classList.toggle('suppressed', hero.manaDrain > 0);
   get('hero-level').textContent = String(hero.level);
   const commandLabels = { hold: 'позиция', move: 'к точке', focus: 'фокус', pursuit: 'погоня', aim: 'выбор зоны' } as const;
-  get('hero-status').textContent = hero.alive ? (overcharged ? `перегрузка ${Math.ceil(hero.overcharge)}с` : commandLabels[hero.command]) : `возрождение ${Math.ceil(hero.respawn)}с`;
+  get('hero-status').textContent = hero.alive
+    ? hero.manaDrain > 0 ? `подавление −${hero.manaDrain}/с` : overcharged ? `перегрузка ${Math.ceil(hero.overcharge)}с` : commandLabels[hero.command]
+    : `возрождение ${Math.ceil(hero.respawn)}с`;
   const stormOrb = get<HTMLElement>('storm-orb');
   const stormRatio = overcharged ? 1 : hero.stormCharge / 100;
   stormOrb.style.setProperty('--storm-angle', `${stormRatio * 360}deg`);
@@ -692,7 +704,7 @@ function renderHero(state: HudState): void {
   get('hero-focus').classList.toggle('active', Boolean(hero.focusTarget));
   get('hero-perk').textContent = hero.perk.toUpperCase();
   get('hero-perk').title = hero.perk;
-  heroPanel.title = `Уровень ${hero.level}/10 · ${hero.perk}`;
+  heroPanel.title = `Уровень ${hero.level}/10 · ${hero.perk}${hero.manaDrain > 0 ? ` · Нулификатор: мана −${hero.manaDrain}/с` : ''}`;
   setBar('hp', hero.hp / hero.maxHp, `${Math.ceil(hero.hp)} / ${hero.maxHp}`);
   setBar('mana', hero.mana / hero.maxMana, `${Math.floor(hero.mana)} / ${hero.maxMana}`);
   const xpRatio = hero.level >= 10 ? 1 : (hero.xp - hero.xpLevelStart) / Math.max(1, hero.xpNext - hero.xpLevelStart);
@@ -731,6 +743,8 @@ function renderBoss(state: HudState): void {
   get('boss-name').textContent = state.boss.name.toUpperCase();
   get('boss-phase').textContent = `ФАЗА ${state.boss.phase === 1 ? 'I' : 'II'}`;
   get('boss-shield').textContent = state.boss.shielded ? 'МАГИЧЕСКИЙ ЩИТ' : '';
+  get('boss-strike').textContent = `УДАР ${Math.max(0, Math.ceil(state.boss.strikeIn))}с`;
+  get('boss-strike').classList.toggle('imminent', state.boss.strikeIn <= 2);
   get<HTMLElement>('boss-fill').style.width = `${Math.max(0, state.boss.hp / state.boss.maxHp) * 100}%`;
   get('boss-value').textContent = `${Math.ceil(state.boss.hp)} / ${Math.ceil(state.boss.maxHp)}`;
 }

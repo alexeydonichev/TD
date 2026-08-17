@@ -181,6 +181,17 @@ test('полный ускоренный матч: башня, способнос
   await page.getByRole('button', { name: /Улучшить/ }).click();
   await expect(page.locator('#tower-level')).toHaveText('2');
 
+  // The smoke campaign validates transitions and victory, not the deliberately losing
+  // low-investment build. Max the four representative towers before jumping to bosses.
+  for (const [x, y] of [[650, 450], [350, 250], [600, 250], [930, 420]] as const) {
+    await clickWorld(x, y);
+    for (let level = 1; level < 6; level += 1) {
+      const upgrade = page.locator('#upgrade');
+      if (!(await upgrade.isEnabled())) break;
+      await upgrade.click();
+    }
+  }
+
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().wave ?? 0), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
   for (const [tier, name] of [[1, 'СТРАЖ БЕЗДНЫ'], [2, 'ТИТАН ОСКОЛКОВ'], [3, 'ВЛАДЫКА РАЗЛОМА']] as const) {
     await page.evaluate((bossTier) => window.__TD_TEST__?.skipToBoss(bossTier), tier);
@@ -212,8 +223,8 @@ test('режим Хранителя меняет стартовую эконом
   await expect(page.locator('[data-difficulty="story"] .difficulty-rule')).toHaveCount(3);
   await expect(page.locator('[data-difficulty="story"]')).toContainText('Герой: +15% урона');
   await expect(page.locator('[data-difficulty="standard"]')).toContainText('12 секунд между волнами');
-  await expect(page.locator('[data-difficulty="rift"]')).toContainText('+70% здоровья');
-  await expect(page.locator('[data-difficulty="rift"]')).toContainText('броня +18%');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('полный доход только за три боевые доктрины');
+  await expect(page.locator('[data-difficulty="rift"]')).toContainText('Контр-типы усилены');
   await page.screenshot({ path: 'test-results/difficulty-rules.png', fullPage: true });
   await page.locator('[data-difficulty="story"]').click();
   await page.locator('#begin').click();
@@ -241,7 +252,11 @@ test('Повелитель бури создаёт дефицитную экон
   await expect(page.locator('#difficulty-badge')).toHaveText('ПОВЕЛИТЕЛЬ БУРИ');
   await expect(page.locator('#countdown')).toHaveText(/00:0[5-7]/);
   await expect(page.locator('#start-wave')).toContainText(/\+◈ [4-5]/);
-  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 16');
+  await page.locator('#wave-toggle').click();
+  await expect(page.locator('#doctrine-warning')).toBeVisible();
+  await expect(page.locator('#doctrine-value')).toHaveText('ДОКТРИНЫ 0/3');
+  await expect(page.locator('#doctrine-copy')).toContainText('Боевой доход 50%');
+  await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 8');
 });
 
 test('герой держит фокус, преследует цель и направляет рывок с WASD', async ({ page }) => {
@@ -386,23 +401,39 @@ test('элитные мутации читаются в бою, а герой в
   await page.locator('#zoom-out').click();
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().cameraZoom ?? 2)).toBeLessThanOrEqual(1.01);
 
-  for (const elite of ['swift', 'bulwark', 'regenerator'] as const) {
+  for (const elite of ['swift', 'bulwark', 'regenerator', 'nullifier'] as const) {
     await page.evaluate((kind) => window.__TD_TEST__?.spawnElite(kind), elite);
   }
-  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().eliteEnemies ?? 0)).toBe(3);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.metrics().eliteEnemies ?? 0)).toBe(4);
   const elites = await page.evaluate(() => window.__TD_TEST__?.enemies().filter((enemy) => enemy.elite));
-  expect(elites?.map((enemy) => enemy.elite).sort()).toEqual(['bulwark', 'regenerator', 'swift']);
+  expect(elites?.map((enemy) => enemy.elite).sort()).toEqual(['bulwark', 'nullifier', 'regenerator', 'swift']);
   expect(elites?.find((enemy) => enemy.elite === 'bulwark')?.shield).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.manaDrain ?? 0)).toBeGreaterThanOrEqual(12);
+  await expect(page.locator('.hero-panel')).toHaveClass(/suppressed/);
 
   await page.evaluate(() => window.__TD_TEST__?.chargeHero());
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.overcharge ?? 0)).toBeGreaterThan(7);
   await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().overcharge ?? 0)).toBe(1);
   await expect(page.locator('.hero-panel')).toHaveClass(/overcharged/);
   await expect(page.locator('#storm-orb')).toHaveClass(/overcharged/);
-  await expect(page.locator('#hero-status')).toContainText('перегрузка');
+  await expect(page.locator('#hero-status')).toContainText('подавление');
   await page.waitForTimeout(250);
   await page.screenshot({ path: 'test-results/elite-overcharge.png', fullPage: true });
   expect(consoleErrors).toEqual([]);
+});
+
+test('босс предупреждает о позиционном ударе и наказывает неподвижного героя', async ({ page }) => {
+  await page.goto('/?test=1');
+  await page.locator('[data-difficulty="rift"]').click();
+  await page.locator('#begin').click();
+  await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
+  await page.evaluate(() => window.__TD_TEST__?.skipToBoss(3));
+  await expect(page.locator('#boss-bar')).toBeVisible({ timeout: 8_000 });
+  const hpBefore = await page.evaluate(() => window.__TD_TEST__!.state().hero.hp);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().bossStrike ?? 0), { timeout: 8_000 }).toBeGreaterThan(0);
+  await expect(page.locator('#boss-strike')).toContainText('УДАР');
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__!.state().hero.hp), { timeout: 8_000 }).toBeLessThan(hpBefore);
 });
 
 test('тактический брифинг показывает состав, награду и статус волны', async ({ page }) => {
@@ -436,7 +467,8 @@ test('тактический брифинг показывает состав, �
   await page.evaluate(() => window.__TD_TEST__?.skipToBoss(3));
   await expect(page.locator('#wave-title')).toHaveText('Владыка Разлома');
   await expect(page.locator('#wave-roster .enemy-chip')).toHaveCount(4);
-  await expect(page.locator('#wave-roster')).toContainText('Владыка Разлома×1');
+  await expect(page.locator('#wave-roster [data-enemy="boss"]')).toContainText('Владыка Разлома');
+  await expect(page.locator('#wave-roster [data-enemy="boss"]')).toContainText('×1');
   await expect(page.locator('#wave-size')).toHaveText('45 врагов');
   await expect(page.locator('#wave-xp')).toHaveText('Герой +198 XP');
   await expect(page.locator('#wave-reward')).toHaveText('Зачистка +◈ 320');

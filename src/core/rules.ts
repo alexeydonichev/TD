@@ -1,4 +1,4 @@
-import type { Difficulty, DifficultyDefinition, EliteType, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, WaveSpawn } from './types';
+import type { DamageChannel, Difficulty, DifficultyDefinition, EliteType, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, TowerType, WaveSpawn } from './types';
 import { HERO, HERO_LEVELS } from './config';
 
 export type PlacementFailure = 'outside' | 'path' | 'crystal' | 'forbidden' | 'occupied' | 'gold';
@@ -8,15 +8,54 @@ export function distance(a: Point, b: Point): number {
 }
 
 export function eliteCadence(difficulty: Difficulty): number {
-  return difficulty === 'rift' ? 7 : difficulty === 'standard' ? 9 : 12;
+  return difficulty === 'rift' ? 5 : difficulty === 'standard' ? 9 : 12;
 }
 
 export function eliteAffixForSpawn(wave: number, spawnIndex: number, difficulty: Difficulty, enemyType: EnemyType): EliteType | null {
   if (wave < 4 || spawnIndex < 1 || enemyType === 'warden' || enemyType === 'titan' || enemyType === 'boss') return null;
   const cadence = eliteCadence(difficulty);
   if (spawnIndex % cadence !== 0) return null;
-  const unlocked: EliteType[] = wave < 8 ? ['swift'] : wave < 13 ? ['swift', 'bulwark'] : ['swift', 'bulwark', 'regenerator'];
-  return unlocked[(wave + Math.floor(spawnIndex / cadence)) % unlocked.length];
+  const unlocked: EliteType[] = wave < 8
+    ? ['swift']
+    : wave < 13
+      ? (difficulty === 'rift' ? ['swift', 'bulwark', 'nullifier'] : ['swift', 'bulwark'])
+      : ['swift', 'bulwark', 'regenerator', 'nullifier'];
+  const affix = unlocked[(wave + Math.floor(spawnIndex / cadence)) % unlocked.length];
+  return enemyType === 'winged' && affix === 'nullifier' ? 'swift' : affix;
+}
+
+const DAMAGE_AFFINITIES: Record<EnemyType, Record<DamageChannel, number>> = {
+  raider: { arrow: 1, frost: 1, siege: 1, storm: 1 },
+  runner: { arrow: 0.65, frost: 0.9, siege: 1.35, storm: 0.88 },
+  brute: { arrow: 0.58, frost: 1.3, siege: 1.15, storm: 1 },
+  winged: { arrow: 1.35, frost: 0.55, siege: 0, storm: 0.82 },
+  warden: { arrow: 1.15, frost: 0.82, siege: 1.08, storm: 0.7 },
+  titan: { arrow: 0.65, frost: 1.25, siege: 1.3, storm: 0.65 },
+  boss: { arrow: 0.78, frost: 0.85, siege: 1.25, storm: 0.6 },
+};
+
+export function damageAffinityMultiplier(enemyType: EnemyType, elite: EliteType | null, channel: DamageChannel, difficulty: Difficulty): number {
+  const strength = difficulty === 'story' ? 0.45 : difficulty === 'standard' ? 0.75 : 1;
+  let multiplier = 1 + (DAMAGE_AFFINITIES[enemyType][channel] - 1) * strength;
+  if (elite === 'bulwark') multiplier *= channel === 'siege' ? 1.25 : channel === 'arrow' ? 0.84 : 1;
+  if (elite === 'regenerator' && channel === 'frost') multiplier *= 1.18;
+  if (elite === 'nullifier') {
+    multiplier *= channel === 'siege' ? 1.55 : channel === 'arrow' ? 0.72 : channel === 'frost' ? 0.45 : 0.38;
+  }
+  return Math.max(0.2, Math.min(1.8, multiplier));
+}
+
+export function slowEffectMultiplier(enemyType: EnemyType, elite: EliteType | null): number {
+  if (elite === 'nullifier') return 0.25;
+  if (enemyType === 'warden' || enemyType === 'titan' || enemyType === 'boss') return 0.45;
+  if (enemyType === 'winged') return 0.65;
+  return 1;
+}
+
+export function tacticalIncomeMultiplier(difficulty: Difficulty, towerTypes: Iterable<TowerType>): number {
+  if (difficulty !== 'rift') return 1;
+  const doctrines = new Set([...towerTypes].filter((type) => type !== 'boost')).size;
+  return [0.5, 0.62, 0.8, 1][Math.min(3, doctrines)];
 }
 
 export function expectedEliteCount(wave: number, enemyCount: number, difficulty: Difficulty): number {

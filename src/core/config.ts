@@ -1,4 +1,4 @@
-import type { DifficultyDefinition, EliteDefinition, EliteType, EnemyDefinition, MapDefinition, Point, TowerDefinition, WaveDefinition } from './types';
+import type { DifficultyDefinition, EliteDefinition, EliteType, EnemyDefinition, EnemyType, MapDefinition, Point, TowerDefinition, WaveDefinition } from './types';
 
 export const GAME_WIDTH = 1200;
 export const GAME_HEIGHT = 700;
@@ -34,7 +34,7 @@ export const DIFFICULTIES: Record<string, DifficultyDefinition> = {
     startingGold: 320, crystalLives: 8, scoreMultiplier: 3,
     heroDamage: 0.98, heroSpeed: 1, heroManaRegen: 0.78, heroDamageTaken: 1.5, heroRespawn: 1.6,
     intermission: 0.5, bossShield: 1.4, earlyStartGold: 0.35,
-    rules: ['8 прочности · 320 золота · награды −36% → −62%', 'Враги: +70% здоровья · броня +18% · скорость +8%', '6с подготовки · мана −22% · урон герою +50% · щиты +40%'],
+    rules: ['8 прочности · 320 золота · полный доход только за три боевые доктрины', 'Контр-типы усилены · смешанные отряды атакуют одновременно', 'Нулификаторы гасят грозу · боссы вызывают удары по позиции героя'],
   },
 };
 
@@ -205,6 +205,16 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
   boss: { type: 'boss', name: 'Владыка Разлома', maxHp: 8400, armor: 32, speed: 23, reward: 1100, crystalDamage: 10, flying: false, color: 0xff3f9a, radius: 35 },
 };
 
+export const ENEMY_TACTICS: Record<EnemyType, { role: string; detail: string }> = {
+  raider: { role: 'СТРОЙ', detail: 'без резистов · опасен массой' },
+  runner: { role: 'ВЁРТКИЙ', detail: 'стрелы −35% · осада +35%' },
+  brute: { role: 'РУННАЯ БРОНЯ', detail: 'стрелы −42% · лёд +30% · осада +15%' },
+  winged: { role: 'ЭФИРНЫЙ', detail: 'лёд −45% · стрелы +35%' },
+  warden: { role: 'ЩИТ БЕЗДНЫ', detail: 'гроза −30% · стрелы +15%' },
+  titan: { role: 'КАМЕННЫЙ', detail: 'стрелы −35% · лёд +25% · осада +30%' },
+  boss: { role: 'ВЛАДЫКА', detail: 'гроза −40% · осада +25%' },
+};
+
 export const ELITES: Record<EliteType, EliteDefinition> = {
   swift: {
     type: 'swift', name: 'Гончая Разлома', shortName: 'СТРЕМИТЕЛЬНЫЙ', description: '+22% скорости · +30% здоровья', color: 0xff5bd7,
@@ -218,6 +228,10 @@ export const ELITES: Record<EliteType, EliteDefinition> = {
     type: 'regenerator', name: 'Живой Осколок', shortName: 'РЕГЕНЕРАТОР', description: 'восстанавливает 1,2% здоровья/с', color: 0x71f5a1,
     hpMultiplier: 1.4, speedMultiplier: 1, armorBonus: 4, rewardMultiplier: 1.65, shieldRatio: 0, regeneration: 0.012,
   },
+  nullifier: {
+    type: 'nullifier', name: 'Нулификатор Бури', shortName: 'ГЛУШИТЕЛЬ', description: 'гасит грозу · −12 маны/с · уязвим к осаде', color: 0xffcf5a,
+    hpMultiplier: 1.55, speedMultiplier: 0.96, armorBonus: 9, rewardMultiplier: 1.9, shieldRatio: 0.14, regeneration: 0,
+  },
 };
 
 export const WAVES: WaveDefinition[] = [
@@ -225,22 +239,22 @@ export const WAVES: WaveDefinition[] = [
   { title: 'Первый натиск', intel: 'Плотная группа налётчиков', reward: 42, spawns: [{ type: 'raider', count: 14, gapMs: 560 }] },
   { title: 'Сумеречный забег', intel: 'Быстрые бегуны', reward: 48, spawns: [{ type: 'runner', count: 16, gapMs: 420 }] },
   { title: 'Клин и коготь', intel: 'Налётчики + быстрые', reward: 55, spawns: [{ type: 'raider', count: 10, gapMs: 560 }, { type: 'runner', count: 12, gapMs: 350 }] },
-  { title: 'Стальной гром', intel: 'Броня под прикрытием', reward: 66, spawns: [{ type: 'brute', count: 3, gapMs: 760 }, { type: 'raider', count: 12, gapMs: 500 }] },
-  { title: 'Голодная стая', intel: 'Масса быстрых · немного воздуха', reward: 74, spawns: [{ type: 'runner', count: 28, gapMs: 225 }, { type: 'winged', count: 6, gapMs: 510 }] },
-  { title: 'Страж Бездны', intel: 'БОСС I · щит · призыв стаи', reward: 120, spawns: [{ type: 'raider', count: 12, gapMs: 460 }, { type: 'runner', count: 8, gapMs: 320 }, { type: 'warden', count: 1, gapMs: 900 }] },
-  { title: 'Тени над долиной', intel: 'ВОЗДУХ · быстрые группы', reward: 82, spawns: [{ type: 'winged', count: 18, gapMs: 420 }, { type: 'runner', count: 12, gapMs: 310 }] },
-  { title: 'Каменный марш', intel: 'Бронированные громилы', reward: 90, spawns: [{ type: 'brute', count: 8, gapMs: 700 }, { type: 'raider', count: 16, gapMs: 430 }] },
-  { title: 'Десятый разлом', intel: 'Смешанная · воздух · броня', reward: 100, spawns: [{ type: 'brute', count: 6, gapMs: 640 }, { type: 'winged', count: 12, gapMs: 390 }, { type: 'runner', count: 18, gapMs: 270 }] },
-  { title: 'Багровый поток', intel: 'Очень много быстрых целей', reward: 108, spawns: [{ type: 'runner', count: 34, gapMs: 205 }, { type: 'winged', count: 12, gapMs: 380 }] },
-  { title: 'Железный круг', intel: 'Тяжёлая броня · плотный строй', reward: 118, spawns: [{ type: 'brute', count: 12, gapMs: 610 }, { type: 'raider', count: 20, gapMs: 400 }] },
-  { title: 'Перед бурей', intel: 'Смешанный штурм со всех высот', reward: 128, spawns: [{ type: 'raider', count: 18, gapMs: 390 }, { type: 'runner', count: 20, gapMs: 235 }, { type: 'winged', count: 14, gapMs: 350 }] },
-  { title: 'Титан Осколков', intel: 'БОСС II · тяжёлая броня · подкрепление', reward: 190, spawns: [{ type: 'brute', count: 7, gapMs: 590 }, { type: 'winged', count: 12, gapMs: 350 }, { type: 'titan', count: 1, gapMs: 950 }] },
-  { title: 'Марш исполинов', intel: 'Много тяжёлой брони', reward: 142, spawns: [{ type: 'brute', count: 16, gapMs: 540 }, { type: 'raider', count: 20, gapMs: 360 }] },
-  { title: 'Чёрные крылья', intel: 'Массированный воздух · быстрые', reward: 152, spawns: [{ type: 'winged', count: 26, gapMs: 310 }, { type: 'runner', count: 24, gapMs: 210 }] },
-  { title: 'Ломка строя', intel: 'Броня прикрывает большую орду', reward: 164, spawns: [{ type: 'brute', count: 14, gapMs: 510 }, { type: 'raider', count: 32, gapMs: 330 }] },
-  { title: 'Шторм Разлома', intel: 'Непрерывный смешанный натиск', reward: 178, spawns: [{ type: 'runner', count: 28, gapMs: 190 }, { type: 'winged', count: 18, gapMs: 290 }, { type: 'brute', count: 12, gapMs: 490 }] },
-  { title: 'Последняя осада', intel: 'Элитная армия · все типы', reward: 200, spawns: [{ type: 'raider', count: 28, gapMs: 310 }, { type: 'brute', count: 16, gapMs: 470 }, { type: 'winged', count: 22, gapMs: 270 }] },
-  { title: 'Владыка Разлома', intel: 'БОСС III · триумфальный штурм', reward: 320, spawns: [{ type: 'runner', count: 20, gapMs: 190 }, { type: 'winged', count: 14, gapMs: 280 }, { type: 'brute', count: 10, gapMs: 440 }, { type: 'boss', count: 1, gapMs: 1000 }] },
+  { title: 'Стальной гром', intel: 'Броня прикрывает стрелковый строй', reward: 66, spawns: [{ type: 'brute', count: 3, gapMs: 760, startMs: 0 }, { type: 'raider', count: 12, gapMs: 500, startMs: 850 }] },
+  { title: 'Голодная стая', intel: 'Быстрые и воздушные цели идут одновременно', reward: 74, spawns: [{ type: 'runner', count: 28, gapMs: 225, startMs: 0 }, { type: 'winged', count: 6, gapMs: 510, startMs: 900 }] },
+  { title: 'Страж Бездны', intel: 'БОСС I · щит · стая прикрывает владыку', reward: 120, spawns: [{ type: 'raider', count: 12, gapMs: 460, startMs: 0 }, { type: 'warden', count: 1, gapMs: 900, startMs: 1700 }, { type: 'runner', count: 8, gapMs: 320, startMs: 2500 }] },
+  { title: 'Тени над долиной', intel: 'Воздух и вёрткие наземные цели', reward: 82, spawns: [{ type: 'winged', count: 18, gapMs: 420, startMs: 0 }, { type: 'runner', count: 12, gapMs: 310, startMs: 1200 }] },
+  { title: 'Каменный марш', intel: 'Рунная броня ведёт плотный строй', reward: 90, spawns: [{ type: 'brute', count: 8, gapMs: 700, startMs: 0 }, { type: 'raider', count: 16, gapMs: 430, startMs: 900 }] },
+  { title: 'Десятый разлом', intel: 'Три контр-типа входят в бой одновременно', reward: 100, spawns: [{ type: 'brute', count: 6, gapMs: 640, startMs: 0 }, { type: 'winged', count: 12, gapMs: 390, startMs: 700 }, { type: 'runner', count: 18, gapMs: 270, startMs: 1400 }] },
+  { title: 'Багровый поток', intel: 'Вёрткий поток под воздушным прикрытием', reward: 108, spawns: [{ type: 'runner', count: 34, gapMs: 205, startMs: 0 }, { type: 'winged', count: 12, gapMs: 380, startMs: 750 }] },
+  { title: 'Железный круг', intel: 'Тяжёлая броня скрывает плотный строй', reward: 118, spawns: [{ type: 'brute', count: 12, gapMs: 610, startMs: 0 }, { type: 'raider', count: 20, gapMs: 400, startMs: 700 }] },
+  { title: 'Перед бурей', intel: 'Непрерывный штурм земли и воздуха', reward: 128, spawns: [{ type: 'raider', count: 18, gapMs: 390, startMs: 0 }, { type: 'runner', count: 20, gapMs: 235, startMs: 650 }, { type: 'winged', count: 14, gapMs: 350, startMs: 1250 }] },
+  { title: 'Титан Осколков', intel: 'БОСС II · броня · воздух прикрывает Титана', reward: 190, spawns: [{ type: 'brute', count: 7, gapMs: 590, startMs: 0 }, { type: 'titan', count: 1, gapMs: 950, startMs: 1500 }, { type: 'winged', count: 12, gapMs: 350, startMs: 2100 }] },
+  { title: 'Марш исполинов', intel: 'Рунная броня прикрыта массовым строем', reward: 142, spawns: [{ type: 'brute', count: 16, gapMs: 540, startMs: 0 }, { type: 'raider', count: 20, gapMs: 360, startMs: 750 }] },
+  { title: 'Чёрные крылья', intel: 'Массированный воздух и вёрткие прорывы', reward: 152, spawns: [{ type: 'winged', count: 26, gapMs: 310, startMs: 0 }, { type: 'runner', count: 24, gapMs: 210, startMs: 650 }] },
+  { title: 'Ломка строя', intel: 'Броня и орда давят одним фронтом', reward: 164, spawns: [{ type: 'brute', count: 14, gapMs: 510, startMs: 0 }, { type: 'raider', count: 32, gapMs: 330, startMs: 600 }] },
+  { title: 'Шторм Разлома', intel: 'Три контр-типа без паузы между группами', reward: 178, spawns: [{ type: 'runner', count: 28, gapMs: 190, startMs: 0 }, { type: 'winged', count: 18, gapMs: 290, startMs: 600 }, { type: 'brute', count: 12, gapMs: 490, startMs: 1150 }] },
+  { title: 'Последняя осада', intel: 'Элитная армия атакует единым фронтом', reward: 200, spawns: [{ type: 'raider', count: 28, gapMs: 310, startMs: 0 }, { type: 'brute', count: 16, gapMs: 470, startMs: 500 }, { type: 'winged', count: 22, gapMs: 270, startMs: 1000 }] },
+  { title: 'Владыка Разлома', intel: 'БОСС III · все контр-типы прикрывают владыку', reward: 320, spawns: [{ type: 'runner', count: 20, gapMs: 190, startMs: 0 }, { type: 'boss', count: 1, gapMs: 1000, startMs: 1400 }, { type: 'winged', count: 14, gapMs: 280, startMs: 1800 }, { type: 'brute', count: 10, gapMs: 440, startMs: 2400 }] },
 ];
 
 export const HERO = {

@@ -62,6 +62,13 @@ button { font: inherit; color: inherit; }
 .elite-warning { margin: -2px 0 9px; padding: 6px 8px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(255,93,211,.38); border-radius: 6px; background: linear-gradient(90deg, rgba(119,40,121,.24), rgba(35,117,137,.18)); box-shadow: inset 0 0 14px rgba(109,225,255,.06); }
 .elite-warning span { color: #ff91e2; font-size: 8px; font-weight: 900; letter-spacing: .12em; }
 .elite-warning b { color: #9bf4ff; font-size: 10px; }
+.doctrine-warning { margin: -2px 0 9px; padding: 7px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid rgba(255,176,65,.42); border-radius: 6px; background: linear-gradient(90deg, rgba(139,70,20,.24), rgba(76,31,24,.18)); }
+.doctrine-warning span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.doctrine-warning b { color: #ffcb70; font-size: 8px; letter-spacing: .12em; }
+.doctrine-warning small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c9a977; font-size: 7px; }
+.doctrine-warning i { color: #ffb84f; font-size: 11px; font-style: normal; font-weight: 900; }
+.doctrine-warning.complete { border-color: rgba(104,232,201,.42); background: rgba(31,115,95,.16); }
+.doctrine-warning.complete b, .doctrine-warning.complete i { color: #78ebcf; }
 .wave-card.collapsed { width: 285px; padding: 11px 12px; }
 .wave-card.collapsed .wave-card-details { display: none; }
 .wave-card.collapsed .wave-economy { margin: 5px 0 7px; }
@@ -78,7 +85,9 @@ button { font: inherit; color: inherit; }
 .enemy-chip[data-enemy="warden"] i { background-position: 0 100%; }
 .enemy-chip[data-enemy="titan"] i { background-position: 33.333% 100%; }
 .enemy-chip[data-enemy="boss"] i { background-position: 66.667% 100%; }
-.enemy-chip b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d8cedd; font-size: 8px; }
+.enemy-chip > span { min-width: 0; overflow: hidden; }
+.enemy-chip b { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d8cedd; font-size: 8px; }
+.enemy-chip small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #91899b; font-size: 6px; line-height: 1.15; text-transform: uppercase; }
 .enemy-chip em { color: var(--cyan); font-size: 10px; font-style: normal; font-weight: 900; }
 .enemy-chip.boss { border-color: rgba(255,91,167,.42); background: rgba(128,34,91,.16); }
 .enemy-chip.boss em { color: #ff9acb; }
@@ -130,6 +139,9 @@ button { font: inherit; color: inherit; }
 
 .hero-panel { position: absolute; z-index: 76; bottom: 16px; right: 18px; height: 82px; padding: 9px 11px; border-radius: 10px; display: flex; gap: 10px; align-items: center; }
 .hero-panel.overcharged { border-color: rgba(132,240,255,.86); box-shadow: 0 0 26px rgba(71,218,255,.28), inset 0 0 24px rgba(96,87,222,.15); animation: storm-panel-pulse .76s ease-in-out infinite alternate; }
+.hero-panel.suppressed { border-color: rgba(255,189,76,.8); box-shadow: 0 0 25px rgba(255,141,55,.2), inset 0 0 24px rgba(148,56,24,.17); }
+.hero-panel.suppressed .hero-title small { color: #ffc15d; }
+.hero-panel.suppressed .vital.mana > div { border-color: rgba(255,172,69,.7); box-shadow: inset 0 0 8px rgba(184,75,34,.4); }
 .hero-portrait { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; position: relative; font-size: 0; background-color: #102633; background-image: radial-gradient(circle, rgba(80,225,244,.18), transparent 68%), url('/assets/hero-v2.webp'); background-size: cover, 90px 90px; background-position: center, center 23%; background-repeat: no-repeat; border: 2px solid #83e6ef; box-shadow: 0 0 18px rgba(77,213,235,.25); }
 .hero-portrait span { position: absolute; bottom: -4px; right: -3px; width: 22px; height: 22px; display: grid; place-items: center; background: #e3b54e; color: #261a12; border-radius: 50%; font-size: 11px; font-weight: 900; }
 .storm-orb { --storm-angle: 0deg; position: absolute; top: -8px; right: -7px; width: 25px; height: 25px; padding: 3px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(#77edff 0 var(--storm-angle), rgba(48,42,68,.9) var(--storm-angle) 360deg); border: 1px solid rgba(160,244,255,.5); box-shadow: 0 0 8px rgba(94,225,255,.18); opacity: .72; transition: opacity .18s, box-shadow .18s; }
@@ -204,6 +216,9 @@ button { font: inherit; color: inherit; }
 
 .boss-bar { position: absolute; z-index: 72; top: 91px; left: 50%; transform: translateX(-50%); width: 500px; padding: 10px 14px; border-radius: 8px; border-color: rgba(255,70,159,.5); }
 .boss-bar > div:first-child { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; color: #ff9fcd; }
+#boss-strike { margin-left: auto; padding-left: 12px; color: #ffc065; font-size: 9px; font-weight: 900; }
+#boss-strike.imminent { color: #ff6f62; text-shadow: 0 0 9px rgba(255,65,65,.8); animation: boss-warning-pulse .38s ease-in-out infinite alternate; }
+@keyframes boss-warning-pulse { to { opacity: .55; transform: scale(1.06); } }
 #boss-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #boss-phase { color: #ffd18e; }
 #boss-shield { color: #a9efff; }
