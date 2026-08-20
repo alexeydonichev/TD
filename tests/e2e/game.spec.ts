@@ -100,6 +100,32 @@ test('кампания показывает пять карт и загружа�
   }
 });
 
+test('аномалии меняют правила поздних карт и ясно показаны в HUD', async ({ page }) => {
+  await page.goto('/?test=1');
+  await expect(page.locator('[data-map="frozen"]')).toContainText('Белая мгла');
+  await expect(page.locator('[data-map="bastion"]')).toContainText('Магмовый прилив');
+  await expect(page.locator('[data-map="stormspire"]')).toContainText('Грозовой резонанс');
+  await expect(page.locator('[data-map="abyss"]')).toContainText('Затмение Бездны');
+
+  await page.locator('[data-map="stormspire"]').click();
+  await page.locator('#begin').click();
+  await expect.poll(() => page.evaluate(() => Boolean(window.__TD_TEST__))).toBe(true);
+  await expect(page.locator('#map-anomaly')).toBeVisible();
+  await expect(page.locator('#map-anomaly-name')).toHaveText('Грозовой резонанс');
+  await expect(page.locator('#map-anomaly-description')).toContainText('35 маны');
+
+  await page.evaluate(() => window.__TD_TEST__?.spawnStress(4));
+  await page.evaluate(() => window.__TD_TEST__?.triggerAnomaly());
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().anomaly?.active)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().anomaly?.pulse)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.visuals().anomaly)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.enemies().some((enemy) => enemy.conductive))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__TD_TEST__?.state().hero.stormCharge ?? 0)).toBeGreaterThanOrEqual(18);
+  await expect(page.locator('#map-anomaly')).toHaveClass(/active/);
+  await expect(page.locator('#map-anomaly-kicker')).toHaveText('АНОМАЛИЯ АКТИВНА');
+  await page.screenshot({ path: 'test-results/storm-resonance.png', fullPage: true });
+});
+
 test('полный ускоренный матч: башня, способность, улучшение, следующая волна и победа', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {

@@ -63,6 +63,7 @@ export const MAPS: Record<string, MapDefinition> = {
     description: 'Длинный маршрут и просторные позиции для знакомства с кампанией.', asset: 'assets/rift-valley-map-v3.webp',
     path: VALLEY_PATH, crystal: VALLEY_CRYSTAL, forbidden: VALLEY_FORBIDDEN,
     enemyHp: 1, enemyArmor: 1, enemySpeed: 1, goldMultiplier: 1, scoreMultiplier: 1,
+    anomaly: null,
     accent: 0x9e4cff, routeColor: 0xffe6ac, tint: 0xc4d0c8,
   },
   frozen: {
@@ -75,6 +76,10 @@ export const MAPS: Record<string, MapDefinition> = {
     crystal: { x: 1120, y: 410 },
     forbidden: [{ x: 135, y: 525, radius: 68 }, { x: 445, y: 105, radius: 58 }, { x: 745, y: 535, radius: 72 }, { x: 1050, y: 110, radius: 64 }],
     enemyHp: 1.12, enemyArmor: 1.06, enemySpeed: 1.05, goldMultiplier: 0.92, scoreMultiplier: 1.2,
+    anomaly: {
+      kind: 'whiteout', icon: '❄', name: 'Белая мгла', intervalMs: 20_000, durationMs: 5_000,
+      description: 'На 5с неморозные башни теряют 30% темпа; ледяные сохраняют скорострельность.',
+    },
     accent: 0x56dfff, routeColor: 0xcff8ff, tint: 0xc3d8ed,
   },
   bastion: {
@@ -87,6 +92,10 @@ export const MAPS: Record<string, MapDefinition> = {
     crystal: { x: 1120, y: 350 },
     forbidden: [{ x: 145, y: 115, radius: 70 }, { x: 470, y: 535, radius: 76 }, { x: 690, y: 285, radius: 54 }, { x: 1010, y: 545, radius: 74 }],
     enemyHp: 1.25, enemyArmor: 1.12, enemySpeed: 1.09, goldMultiplier: 0.84, scoreMultiplier: 1.5,
+    anomaly: {
+      kind: 'magma-tide', icon: '◈', name: 'Магмовый прилив', intervalMs: 18_000, durationMs: 5_000,
+      description: 'На 5с наземная армия ускоряется на 28%; ледяной контроль сдерживает рывок.',
+    },
     accent: 0xff623d, routeColor: 0xffc06b, tint: 0xe0b09d,
   },
   stormspire: {
@@ -99,6 +108,10 @@ export const MAPS: Record<string, MapDefinition> = {
     crystal: { x: 1120, y: 115 },
     forbidden: [{ x: 205, y: 160, radius: 74 }, { x: 595, y: 120, radius: 64 }, { x: 710, y: 555, radius: 72 }, { x: 1045, y: 545, radius: 68 }],
     enemyHp: 1.38, enemyArmor: 1.18, enemySpeed: 1.12, goldMultiplier: 0.79, scoreMultiplier: 1.8,
+    anomaly: {
+      kind: 'storm-resonance', icon: 'ϟ', name: 'Грозовой резонанс', intervalMs: 22_000, durationMs: 6_000,
+      description: 'Враги получают Проводимость на 6с; герой восстанавливает 35 маны и 18 заряда.',
+    },
     accent: 0x45dcff, routeColor: 0xccecff, tint: 0xb5ccdf,
   },
   abyss: {
@@ -111,6 +124,10 @@ export const MAPS: Record<string, MapDefinition> = {
     crystal: { x: 1120, y: 480 },
     forbidden: [{ x: 160, y: 360, radius: 66 }, { x: 505, y: 265, radius: 72 }, { x: 845, y: 280, radius: 78 }, { x: 820, y: 610, radius: 68 }],
     enemyHp: 1.52, enemyArmor: 1.24, enemySpeed: 1.16, goldMultiplier: 0.74, scoreMultiplier: 2.1,
+    anomaly: {
+      kind: 'void-eclipse', icon: '◉', name: 'Затмение Бездны', intervalMs: 16_000, durationMs: 5_000,
+      description: 'На 5с башни наносят на 35% меньше урона; гроза героя пробивает затмение.',
+    },
     accent: 0xe653ff, routeColor: 0xf2cfff, tint: 0xd3b0d9,
   },
 };

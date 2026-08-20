@@ -6,7 +6,17 @@ export type EliteType = 'swift' | 'bulwark' | 'regenerator' | 'nullifier';
 export type TargetMode = 'first' | 'strongest';
 export type Difficulty = 'story' | 'standard' | 'rift';
 export type MapId = 'valley' | 'frozen' | 'bastion' | 'stormspire' | 'abyss';
+export type MapAnomalyKind = 'whiteout' | 'magma-tide' | 'storm-resonance' | 'void-eclipse';
 export type HeroStance = 'guard' | 'pursuit';
+
+export interface MapAnomalyDefinition {
+  kind: MapAnomalyKind;
+  icon: string;
+  name: string;
+  description: string;
+  intervalMs: number;
+  durationMs: number;
+}
 
 export interface MapDefinition {
   id: MapId;
@@ -23,6 +33,7 @@ export interface MapDefinition {
   enemySpeed: number;
   goldMultiplier: number;
   scoreMultiplier: number;
+  anomaly: MapAnomalyDefinition | null;
   accent: number;
   routeColor: number;
   tint: number;

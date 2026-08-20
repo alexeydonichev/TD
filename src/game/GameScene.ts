@@ -5,10 +5,11 @@ import {
 } from '../core/config';
 import {
   absorbShield, applyArmor, applySlow, chainTargets, damageAffinityMultiplier, damageOutcome, dashDestination, distance, distanceToPath, earlyStartBonus, eliteAffixForSpawn, heroLevelForXp,
-  heroParticipationCap, heroParticipationXp, heroProgression, heroWaveClearXp, loseLives, placementFailure, pointToLineDistance, roundedPath, scaleEnemy, snapToGrid,
+  heroParticipationCap, heroParticipationXp, heroProgression, heroWaveClearXp, loseLives, mapAnomalyDamageTakenMultiplier, mapAnomalyEnemySpeedMultiplier,
+  mapAnomalyTowerSpeedMultiplier, placementFailure, pointToLineDistance, roundedPath, scaleEnemy, snapToGrid,
   selectTarget, sellValue, slowEffectMultiplier, tacticalIncomeMultiplier, waveClearReward, waveHpMultiplier, waveSpeedMultiplier,
 } from '../core/rules';
-import type { DamageChannel, Difficulty, EliteType, EnemyType, HeroStance, MapId, Point, TargetMode, TowerType } from '../core/types';
+import type { DamageChannel, Difficulty, EliteType, EnemyType, HeroStance, MapAnomalyKind, MapId, Point, TargetMode, TowerType } from '../core/types';
 import { emit, on } from './bus';
 import {
   animateTowerFire, createProjectileImpact, createProjectileVisual, drawTowerDetails, enemyMotionPose,
@@ -18,6 +19,7 @@ import {
   animateHeroAttack, createDashStorm, createHeroOverchargeAura, createLightningBolt, createStormField, createStormPulse, createStormShield, createThunderBurst, launchStormSpear,
 } from './heroVisuals';
 import { createElitePulse, createRiftStrikeImpact, createRiftStrikeWarning, createShieldBreakEffect, drawEliteAura } from './enemyVisuals';
+import { createMapAnomalyPulse } from './mapAnomalyVisuals';
 
 type Action =
   | { type: 'begin' } | { type: 'build'; tower: TowerType } | { type: 'start-wave' }
@@ -157,6 +159,7 @@ export interface HudState {
   mapNumber: number;
   mapTotal: number;
   mapGoldMultiplier: number;
+  anomaly: null | { kind: MapAnomalyKind; icon: string; name: string; description: string; active: boolean; countdown: number; progress: number; pulse: number };
   gold: number;
   lives: number;
   wave: number;
@@ -218,9 +221,10 @@ declare global {
       spawnElite: (elite?: EliteType) => void;
       chargeHero: () => void;
       grantHeroXp: (amount: number) => void;
+      triggerAnomaly: () => void;
       enemies: () => Array<{ id: number; type: EnemyType; name: string; x: number; y: number; elite: EliteType | null; shield: number; conductive: boolean }>;
       metrics: () => { activeEnemies: number; eliteEnemies: number; gameObjects: number; averageFrameMs: number; fps: number; maxGroundRoadDeviation: number };
-      visuals: () => { attack: number; q: number; w: number; e: number; r: number; overcharge: number; bossStrike: number };
+      visuals: () => { attack: number; q: number; w: number; e: number; r: number; overcharge: number; bossStrike: number; anomaly: number };
     };
   }
 }
@@ -266,7 +270,11 @@ export class GameScene extends Phaser.Scene {
   private hero!: HeroState;
   private heroSealView: Phaser.GameObjects.Container | null = null;
   private heroOverchargeView: Phaser.GameObjects.Container | null = null;
-  private visualEvents = { attack: 0, q: 0, w: 0, e: 0, r: 0, overcharge: 0, bossStrike: 0 };
+  private visualEvents = { attack: 0, q: 0, w: 0, e: 0, r: 0, overcharge: 0, bossStrike: 0, anomaly: 0 };
+  private anomalyChargeMs = 0;
+  private anomalyActiveUntil = 0;
+  private anomalyPulses = 0;
+  private anomalyWasActive = false;
   private aimAbility: 'r' | null = null;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private routePoints: Point[] = [];
@@ -349,6 +357,7 @@ export class GameScene extends Phaser.Scene {
         spawnElite: (elite = 'bulwark') => this.spawnEliteForTest(elite),
         chargeHero: () => this.addStormCharge(100),
         grantHeroXp: (amount) => this.awardHeroXp(amount),
+        triggerAnomaly: () => this.triggerMapAnomaly(),
         enemies: () => this.enemies.filter((enemy) => enemy.alive).map((enemy) => ({
           id: enemy.id, type: enemy.type, name: this.enemyDefinition(enemy.type).name,
           x: enemy.container.x, y: enemy.container.y, elite: enemy.elite, shield: enemy.eliteShield,
@@ -373,6 +382,7 @@ export class GameScene extends Phaser.Scene {
     const delta = Math.min(rawDelta, 50) * this.speed;
     this.simTime += delta;
     this.updateWave(delta);
+    this.updateMapAnomaly(delta);
     this.updateEnemies(delta);
     this.updateBossStrikes();
     this.updateHero(delta);
@@ -820,7 +830,7 @@ export class GameScene extends Phaser.Scene {
     }
     tower.sprite.setFrame({ archer: 0, frost: 1, siege: 2, boost: 3 }[tower.type]);
     tower.sprite.setPosition(0, -13).setAngle(0).setScale(0.098 + tower.level * 0.008)
-      .setTint(tower.level === MAX_TOWER_LEVEL ? 0xffd36a : tower.level >= 4 ? 0xfff1c2 : 0xffffff);
+      .setTint(this.towerTint(tower));
     drawTowerDetails(tower.details, tower.type, tower.level, definition.color);
     for (let index = 0; index < tower.level; index += 1) {
       art.fillStyle(index >= 3 ? 0xff9f43 : 0xffdc72, 1).fillCircle((index - (tower.level - 1) / 2) * 8, 23, index >= 3 ? 3.5 : 3);
@@ -829,6 +839,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateTowerVisuals(): void {
     for (const tower of this.towers) {
+      tower.sprite.setTint(this.towerTint(tower));
       if (this.reduceMotion) {
         tower.details.setRotation(0).setScale(1).setAlpha(1);
         continue;
@@ -842,6 +853,11 @@ export class GameScene extends Phaser.Scene {
         tower.details.setRotation(0).setScale(1).setAlpha(0.9 + Math.sin(phase * 1.9) * 0.08);
       }
     }
+  }
+
+  private towerTint(tower: TowerUnit): number {
+    if (this.isMapAnomalyActive() && this.map.anomaly?.kind === 'whiteout' && tower.type !== 'frost') return 0x8babc0;
+    return tower.level === MAX_TOWER_LEVEL ? 0xffd36a : tower.level >= 4 ? 0xfff1c2 : 0xffffff;
   }
 
   private selectTowerAt(point: Point): void {
@@ -938,6 +954,53 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private isMapAnomalyActive(): boolean {
+    return Boolean(this.map.anomaly && this.anomalyActiveUntil > this.simTime);
+  }
+
+  private updateMapAnomaly(delta: number): void {
+    const anomaly = this.map.anomaly;
+    if (!anomaly) return;
+    const active = this.isMapAnomalyActive();
+    if (this.anomalyWasActive && !active) this.refreshAnomalyTints();
+    this.anomalyWasActive = active;
+    if (!this.waveActive || active) return;
+    this.anomalyChargeMs += delta;
+    if (this.anomalyChargeMs >= anomaly.intervalMs) this.triggerMapAnomaly();
+  }
+
+  private triggerMapAnomaly(): void {
+    const anomaly = this.map.anomaly;
+    if (!anomaly || this.result !== 'playing') return;
+    this.anomalyChargeMs = 0;
+    this.anomalyActiveUntil = this.simTime + anomaly.durationMs;
+    this.anomalyPulses += 1;
+    this.anomalyWasActive = true;
+    this.visualEvents.anomaly += 1;
+
+    if (anomaly.kind === 'storm-resonance') {
+      const maxMana = heroProgression(this.hero.level).maxMana;
+      this.hero.mana = Math.min(maxMana, this.hero.mana + 35);
+      this.addStormCharge(18);
+      this.enemies.filter((enemy) => enemy.alive).forEach((enemy) => this.markConductive(enemy));
+    }
+
+    this.refreshAnomalyTints();
+    const combatTargets = this.enemies.filter((enemy) => enemy.alive).slice(0, 7)
+      .map((enemy) => ({ x: enemy.container.x, y: enemy.container.y - 8 }));
+    const targets = anomaly.kind === 'magma-tide'
+      ? this.map.path.slice(1, -1)
+      : [...combatTargets, { x: this.hero.x, y: this.hero.y - 24 }];
+    createMapAnomalyPulse(this, anomaly.kind, targets, this.reduceMotion);
+    this.cameraFlash(this.map.accent);
+    emit('td:sound', anomaly.kind === 'storm-resonance' ? 'spell' : 'boss');
+    this.emitHud(true);
+  }
+
+  private refreshAnomalyTints(): void {
+    this.enemies.filter((enemy) => enemy.alive).forEach((enemy) => enemy.sprite.setTint(this.enemyTint(enemy)));
+  }
+
   private doctrineTypes(): number {
     return new Set(this.towers.filter((tower) => tower.type !== 'boost').map((tower) => tower.type)).size;
   }
@@ -1006,6 +1069,8 @@ export class GameScene extends Phaser.Scene {
 
   private enemyTint(enemy: EnemyUnit): number {
     if (enemy.slowUntil > this.simTime) return 0xb9f4ff;
+    if (this.isMapAnomalyActive() && this.map.anomaly?.kind === 'magma-tide' && !this.enemyDefinition(enemy.type).flying) return 0xffb079;
+    if (this.isMapAnomalyActive() && this.map.anomaly?.kind === 'void-eclipse') return 0xe5a0ff;
     if (enemy.elite === 'nullifier') return 0xffdc82;
     if (enemy.elite === 'regenerator') return 0xd8ffe2;
     if (enemy.elite === 'swift') return 0xffdcf8;
@@ -1097,7 +1162,8 @@ export class GameScene extends Phaser.Scene {
       const phaseMultiplier = this.isBossType(enemy.type) && enemy.phase === 2 ? 1.28 : 1;
       if (enemy.testHoldUntil <= this.simTime) {
         enemy.progress += applySlow(definition.speed * waveSpeedMultiplier(this.currentWave, DIFFICULTIES[this.difficulty].waveSpeedGrowth) * ENEMY_SPEED_SCALE
-          * phaseMultiplier * (eliteDefinition?.speedMultiplier ?? 1), slow)
+          * phaseMultiplier * (eliteDefinition?.speedMultiplier ?? 1)
+          * mapAnomalyEnemySpeedMultiplier(this.map.anomaly?.kind ?? null, definition.flying, this.isMapAnomalyActive()), slow)
           * this.routeProgressScale * delta / 1000;
       }
       const point = this.pointAtProgress(enemy.progress);
@@ -1259,6 +1325,7 @@ export class GameScene extends Phaser.Scene {
       const target = inRange.find((enemy) => enemy.id === targetSnapshot?.id);
       if (!target) continue;
       const aura = this.boostAt(tower);
+      const anomalySpeed = mapAnomalyTowerSpeedMultiplier(this.map.anomaly?.kind ?? null, tower.type, this.isMapAnomalyActive());
       const sealed = this.hero.sealUntil > this.simTime && distance(tower, this.hero) <= HERO_MECHANICS.sealTowerRadius;
       const multiplier = aura.damage * (sealed ? HERO_MECHANICS.sealTowerDamageMultiplier : 1) * (TEST_MODE ? 3 : 1);
       const kind = tower.type as OffensiveTowerType;
@@ -1268,7 +1335,7 @@ export class GameScene extends Phaser.Scene {
       );
       animateTowerFire(this, tower.sprite, kind, tower.level, this.reduceMotion);
       emit('td:sound', kind === 'archer' ? 'arrow' : kind === 'frost' ? 'frost' : 'cannon');
-      tower.nextAttackAt = this.simTime + level.attackMs / aura.speed;
+      tower.nextAttackAt = this.simTime + level.attackMs / (aura.speed * anomalySpeed);
     }
   }
 
@@ -1346,7 +1413,8 @@ export class GameScene extends Phaser.Scene {
     const armor = (this.enemyDefinition(enemy.type).armor + eliteArmor) * (magic ? 0.2 : 1 - Math.max(0, Math.min(1, armorPierce)));
     const bossShieldMultiplier = this.isBossType(enemy.type) && enemy.shieldUntil > this.simTime ? 0.3 : 1;
     const affinity = damageAffinityMultiplier(enemy.type, enemy.elite, channel, this.difficulty);
-    const mitigatedDamage = applyArmor(rawDamage * affinity, armor) * bossShieldMultiplier;
+    const anomalyMultiplier = mapAnomalyDamageTakenMultiplier(this.map.anomaly?.kind ?? null, channel, this.isMapAnomalyActive());
+    const mitigatedDamage = applyArmor(rawDamage * affinity, armor) * bossShieldMultiplier * anomalyMultiplier;
     const hadEliteShield = enemy.eliteShield > 0;
     const shieldOutcome = absorbShield(mitigatedDamage, enemy.eliteShield);
     enemy.eliteShield = shieldOutcome.shield;
@@ -1875,10 +1943,23 @@ export class GameScene extends Phaser.Scene {
       locked: key === 'r' && this.hero.level < HERO.abilities.r.requiredLevel,
       ...abilityDetails[key],
     });
+    const anomaly = this.map.anomaly;
+    const anomalyActive = this.isMapAnomalyActive();
+    const anomalyCountdown = anomaly
+      ? anomalyActive
+        ? Math.max(0, (this.anomalyActiveUntil - this.simTime) / 1000)
+        : Math.max(0, (anomaly.intervalMs - this.anomalyChargeMs) / 1000)
+      : 0;
     const upcomingIndex = this.waveActive ? Math.max(0, this.currentWave - 1) : Math.min(this.currentWave, WAVES.length - 1);
     return {
       started: this.started, mapId: this.map.id, mapName: this.map.name, mapNumber: this.map.number,
       mapTotal: MAP_ORDER.length, mapGoldMultiplier: this.map.goldMultiplier,
+      anomaly: anomaly ? {
+        kind: anomaly.kind, icon: anomaly.icon, name: anomaly.name, description: anomaly.description,
+        active: anomalyActive, countdown: anomalyCountdown,
+        progress: anomalyActive ? anomalyCountdown / (anomaly.durationMs / 1000) : Math.min(1, this.anomalyChargeMs / anomaly.intervalMs),
+        pulse: this.anomalyPulses,
+      } : null,
       gold: this.gold, lives: this.lives, wave: this.currentWave, totalWaves: WAVES.length,
       remaining: this.spawnQueue.length + this.enemies.filter((enemy) => enemy.alive).length,
       countdown: Math.max(0, this.countdown), waveActive: this.waveActive,
@@ -1891,7 +1972,10 @@ export class GameScene extends Phaser.Scene {
         nextCost: definition.levels[selected.level - 1].upgradeCost,
         sellValue: sellValue(definition.cost, selected.paidUpgrades), description: definition.description, perk: selectedLevel.perk,
         damage: selectedLevel.damage * selectedAura.damage,
-        attacksPerSecond: selectedLevel.attackMs > 0 ? 1000 / selectedLevel.attackMs * selectedAura.speed : 0,
+        attacksPerSecond: selectedLevel.attackMs > 0
+          ? 1000 / selectedLevel.attackMs * selectedAura.speed
+            * mapAnomalyTowerSpeedMultiplier(this.map.anomaly?.kind ?? null, selected.type, anomalyActive)
+          : 0,
         range: selectedLevel.range, projectileCount: selectedLevel.projectileCount, projectileScale: selectedLevel.projectileScale,
         armorPierce: selectedLevel.armorPierce ?? 0, splash: selectedLevel.splash ?? definition.splash, slow: selectedLevel.slow ?? definition.slow,
         auraDamage: selected.type === 'boost' ? selectedLevel.damageBoost ?? 1 : selectedAura.damage,

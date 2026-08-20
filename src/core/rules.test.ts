@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   absorbShield, applyArmor, applySlow, awardGold, buy, canPlaceTower, chainTargets, damageAffinityMultiplier, damageOutcome, dashDestination, distanceToPath, earlyStartBonus,
   eliteAffixForSpawn, eliteCadence, expectedEliteCount, heroLevelForXp, heroParticipationCap, heroParticipationXp, heroProgression, heroWaveClearXp, isWaveComplete, loseLives, matchResult, placementFailure, pointToLineDistance, roundedPath,
+  mapAnomalyDamageTakenMultiplier, mapAnomalyEnemySpeedMultiplier, mapAnomalyTowerSpeedMultiplier,
   scaleEnemy, selectTarget, sellValue, slowEffectMultiplier, snapToGrid, tacticalIncomeMultiplier, upgrade,
   waveClearReward, waveHpMultiplier, waveRoster, waveSpeedMultiplier,
 } from './rules';
@@ -391,6 +392,27 @@ describe('кампания из пяти карт', () => {
       expect(maps[index].goldMultiplier).toBeLessThan(maps[index - 1].goldMultiplier);
       expect(maps[index].scoreMultiplier).toBeGreaterThan(maps[index - 1].scoreMultiplier);
     }
+  });
+
+  it('даёт четырём поздним картам уникальные аномалии', () => {
+    expect(MAPS.valley.anomaly).toBeNull();
+    expect(MAP_ORDER.slice(1).map((id) => MAPS[id].anomaly?.kind)).toEqual([
+      'whiteout', 'magma-tide', 'storm-resonance', 'void-eclipse',
+    ]);
+    MAP_ORDER.slice(1).forEach((id) => {
+      expect(MAPS[id].anomaly?.description.length).toBeGreaterThan(40);
+      expect(MAPS[id].anomaly?.durationMs).toBeGreaterThanOrEqual(5_000);
+    });
+  });
+
+  it('закрепляет контр-игру каждой враждебной аномалии', () => {
+    expect(mapAnomalyTowerSpeedMultiplier('whiteout', 'archer', true)).toBe(0.7);
+    expect(mapAnomalyTowerSpeedMultiplier('whiteout', 'frost', true)).toBe(1);
+    expect(mapAnomalyTowerSpeedMultiplier('whiteout', 'siege', false)).toBe(1);
+    expect(mapAnomalyEnemySpeedMultiplier('magma-tide', false, true)).toBe(1.28);
+    expect(mapAnomalyEnemySpeedMultiplier('magma-tide', true, true)).toBe(1);
+    expect(mapAnomalyDamageTakenMultiplier('void-eclipse', 'arrow', true)).toBe(0.65);
+    expect(mapAnomalyDamageTakenMultiplier('void-eclipse', 'storm', true)).toBe(1);
   });
 
   it('скругляет повороты внутри дорожного полотна без срезания маршрута', () => {

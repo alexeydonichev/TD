@@ -33,6 +33,16 @@ app.innerHTML = `
       <button id="zoom-in" class="icon-button" title="Приблизить карту" aria-label="Приблизить карту">+</button>
     </nav>
 
+    <aside id="map-anomaly" class="map-anomaly glass hidden">
+      <div class="map-anomaly-header">
+        <span id="map-anomaly-icon" aria-hidden="true">❄</span>
+        <div><small id="map-anomaly-kicker">АНОМАЛИЯ КАРТЫ</small><strong id="map-anomaly-name"></strong></div>
+        <b id="map-anomaly-countdown"></b>
+      </div>
+      <p id="map-anomaly-description"></p>
+      <div class="map-anomaly-meter" aria-hidden="true"><i id="map-anomaly-fill"></i></div>
+    </aside>
+
     <aside id="wave-card" class="wave-card glass">
       <div class="wave-card-header">
         <div><div id="wave-kicker" class="eyebrow">СЛЕДУЮЩАЯ УГРОЗА · ВОЛНА 1</div><h2 id="wave-title">Разведчики Разлома</h2></div>
@@ -192,7 +202,8 @@ function mapButton(id: MapId): string {
   const map = MAPS[id];
   const economy = Math.round((1 - map.goldMultiplier) * 100);
   const pressure = map.id === 'valley' ? 'БАЗОВЫЙ БАЛАНС' : `ВРАГИ +${Math.round((map.enemyHp - 1) * 100)}% · ЗОЛОТО −${economy}%`;
-  return `<button class="map-option map-${id}" data-map="${id}" role="radio" aria-checked="false"><span><b>КАРТА ${roman(map.number)}</b><em>${map.subtitle}</em></span><strong>${map.name}</strong><small>${map.description}</small><i>${pressure}</i></button>`;
+  const anomaly = map.anomaly ? `${map.anomaly.icon} ${map.anomaly.name}` : '◇ СТАБИЛЬНЫЙ ФРОНТ';
+  return `<button class="map-option map-${id}" data-map="${id}" role="radio" aria-checked="false"><span><b>КАРТА ${roman(map.number)}</b><em>${map.subtitle}</em></span><strong>${map.name}</strong><small>${map.description}</small><i><span>${pressure}</span><b>${anomaly}</b></i></button>`;
 }
 
 function roman(value: number): string {
@@ -232,6 +243,7 @@ let selectedMap: MapId = storedMap && MAPS[storedMap] ? storedMap : 'valley';
 const isTestMode = new URLSearchParams(window.location.search).get('test') === '1';
 let lastAnnouncedWave = -1;
 let lastBriefedWave = '';
+let lastAnomalyPulse = 0;
 
 function setWaveCardCollapsed(collapsed: boolean): void {
   const card = get('wave-card');
@@ -531,7 +543,8 @@ function updateMapPicker(): void {
     button.classList.toggle('completed', localStorage.getItem(`rift-map-${id}-won`) === 'yes');
     button.setAttribute('aria-checked', String(selected));
   });
-  get('start-map-copy').textContent = `${map.name}: ${map.description}`;
+  const anomalyCopy = map.anomaly ? ` Правило: ${map.anomaly.name} — ${map.anomaly.description}` : '';
+  get('start-map-copy').textContent = `${map.name}: ${map.description}${anomalyCopy}`;
   beginButton.textContent = `НАЧАТЬ · КАРТА ${roman(map.number)}`;
 }
 
@@ -567,6 +580,7 @@ function renderHud(state: HudState): void {
   document.querySelectorAll<HTMLButtonElement>('[data-tower]').forEach((button) => button.classList.toggle('active', button.dataset.tower === state.buildType));
   renderTowerPanel(state);
   renderHero(state);
+  renderMapAnomaly(state);
   renderBoss(state);
   if (state.result !== 'playing') renderEnd(state.result);
   if (state.wave !== lastAnnouncedWave && state.wave > 0) {
@@ -578,6 +592,24 @@ function renderHud(state: HudState): void {
   const usedAbility = Object.values(state.hero.abilities).some((ability) => ability.cooldown > 0);
   if (tutorialStep === 3 && usedAbility) showTutorial(4);
   if (tutorialStep === 4 && (state.selectedTower?.level ?? 0) > 1) showTutorial(-1);
+}
+
+function renderMapAnomaly(state: HudState): void {
+  const panel = get('map-anomaly');
+  panel.classList.toggle('hidden', !state.anomaly);
+  if (!state.anomaly) return;
+  panel.dataset.kind = state.anomaly.kind;
+  panel.classList.toggle('active', state.anomaly.active);
+  get('map-anomaly-icon').textContent = state.anomaly.icon;
+  get('map-anomaly-kicker').textContent = state.anomaly.active ? 'АНОМАЛИЯ АКТИВНА' : state.waveActive ? 'СЛЕДУЮЩИЙ ИМПУЛЬС' : 'ПРАВИЛО КАРТЫ';
+  get('map-anomaly-name').textContent = state.anomaly.name;
+  get('map-anomaly-countdown').textContent = state.waveActive || state.anomaly.active ? `${Math.ceil(state.anomaly.countdown)}с` : 'ОЖИДАНИЕ';
+  get('map-anomaly-description').textContent = state.anomaly.description;
+  get<HTMLElement>('map-anomaly-fill').style.width = `${Math.max(0, Math.min(1, state.anomaly.progress)) * 100}%`;
+  if (state.anomaly.pulse > lastAnomalyPulse) {
+    lastAnomalyPulse = state.anomaly.pulse;
+    get('announcer').textContent = `${state.anomaly.name} активна. ${state.anomaly.description}`;
+  }
 }
 
 function renderWaveBriefing(waveNumber: number, active: boolean, difficulty: Difficulty, mapGoldMultiplier: number, doctrineTypes: number, incomeMultiplier: number): void {

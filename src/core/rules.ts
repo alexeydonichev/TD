@@ -1,4 +1,4 @@
-import type { DamageChannel, Difficulty, DifficultyDefinition, EliteType, EnemyDefinition, EnemyType, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, TowerType, WaveSpawn } from './types';
+import type { DamageChannel, Difficulty, DifficultyDefinition, EliteType, EnemyDefinition, EnemyType, MapAnomalyKind, MatchSnapshot, PlacementContext, Point, TargetMode, TargetSnapshot, TowerType, WaveSpawn } from './types';
 import { HERO, HERO_LEVELS } from './config';
 
 export type PlacementFailure = 'outside' | 'path' | 'crystal' | 'forbidden' | 'occupied' | 'gold';
@@ -50,6 +50,21 @@ export function slowEffectMultiplier(enemyType: EnemyType, elite: EliteType | nu
   if (enemyType === 'warden' || enemyType === 'titan' || enemyType === 'boss') return 0.45;
   if (enemyType === 'winged') return 0.65;
   return 1;
+}
+
+export function mapAnomalyTowerSpeedMultiplier(kind: MapAnomalyKind | null, tower: TowerType, active: boolean): number {
+  if (!active || kind !== 'whiteout' || tower === 'frost') return 1;
+  return 0.7;
+}
+
+export function mapAnomalyEnemySpeedMultiplier(kind: MapAnomalyKind | null, flying: boolean, active: boolean): number {
+  if (!active || kind !== 'magma-tide' || flying) return 1;
+  return 1.28;
+}
+
+export function mapAnomalyDamageTakenMultiplier(kind: MapAnomalyKind | null, channel: DamageChannel, active: boolean): number {
+  if (!active || kind !== 'void-eclipse' || channel === 'storm') return 1;
+  return 0.65;
 }
 
 export function tacticalIncomeMultiplier(difficulty: Difficulty, towerTypes: Iterable<TowerType>): number {
